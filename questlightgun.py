@@ -19,6 +19,7 @@ udp_send_port = 45129
 sock = None
 heartbeatTime = 5
 lastHeartbeat = -heartbeatTime-1
+myIP = None
 
 header = "LightGun:Data "
 
@@ -112,13 +113,18 @@ def emulateMouse(reader,mouseName="LightgunMouse",controllerName="WiimoteButtons
                         device.emit(uinput.ABS_Y,y1)
 
 def udpInit():
-    global sock
+    global sock,myIP
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(('', udp_listen_port))
     group = socket.inet_aton('224.0.0.1')
     mreq = struct.pack('4sL', group, socket.INADDR_ANY)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+    try:
+        myIP = subprocess.check_output(["hostname", "-I"]).decode("utf-8").strip().split()[0]
+        return True
+    except:
+        return False
 
 def udpDetect(seconds):
     t = time.time()
@@ -135,6 +141,7 @@ def udpDetect(seconds):
 
 
 def udpRead():
+    global lastHeartbeat
     while True:
         data, address = sock.recvfrom(80)
         message = data.decode('utf-8')
@@ -142,7 +149,7 @@ def udpRead():
             if time.time() >= lastHeartbeat + heartbeatTime:
                 parts = message.split(' ')
                 try:
-                    out = "LightGun:Request "+socket.gethostbyname(socket.gethostname())
+                    out = "LightGun:Request "+myIP
                     sock.sendto(bytes(out, "utf-8"), (parts[1], udp_send_port))
                     lastHeartbeat = time.time()
                 except:
@@ -150,11 +157,12 @@ def udpRead():
             return message
 
 if __name__ == '__main__':
-    if sys.argv[1] == 'udp':
+    if len(sys.argv)>1 and sys.argv[1] == 'udp':
         udpInit()
         reader = udpRead
-    elif sys.argv[1] == 'udpdetect':
-        udpInit()
+    elif len(sys.argv)>1 and sys.argv[1] == 'udpdetect':
+        if not udpInit():
+            sys.exit(1)
         if udpDetect(3):
             sys.exit(0)
         else:
