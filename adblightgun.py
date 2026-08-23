@@ -6,12 +6,21 @@ import uinput
 import re
 import atexit
 import os
+import socket
+import time
+import struct
 
-cmd = ["adb", "logcat", "godot:I", "*:S", "-e", "LightgunData"]
+udpMode = False
+cmd = ["adb", "logcat", "godot:I", "*:S", "-e", "LightGun:Data"]
 prox_close = "adb shell am broadcast -a com.oculus.vrpowermanager.prox_close"
 prox_open = "adb shell am broadcast -a com.oculus.vrpowermanager.prox_open"
+udp_listen_port = 45128
+udp_send_port = 45129
+sock = None
+heartbeatTime = 5
+lastHeartbeat = -heartbeatTime-1
 
-header = "LightgunData R "
+header = "LightGun:Data "
 
 map = ((1, uinput.BTN_MOUSE),
         (2, uinput.BTN_RIGHT),
@@ -22,7 +31,7 @@ map = ((1, uinput.BTN_MOUSE),
 def isMouse(u):
     return u == uinput.BTN_MOUSE or u == uinput.BTN_RIGHT
 
-def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons",map=map):
+def emulateMouse(reader,mouseName="LightgunMouse",controllerName="WiimoteButtons",map=map):
     global running
     
     size = (1920,1080)
@@ -43,16 +52,16 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons",map=m
             prevX1 = -1
             prevY1 = -1
 
-            for line in iter(process.stdout.readline, ''):
+            for line in iter(reader,''): 
                 line = line.strip()
                 if not line:
                     continue
                 try:
                     start = line.index(header)
-                    data = re.split(r'[,\s]+',line[start+len(header):])
-                    x = float(data[0])
-                    y = float(data[1])
-                    buttons = int(data[2])
+                    data = line[start+len(header):].split(" ")
+                    x = float(data[2])
+                    y = float(data[3])
+                    buttons = int(data[4])
                 except ValueError:
                     continue
 
@@ -80,7 +89,7 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons",map=m
                     elif released & cb:
                         release(dev, u)
 
-                    if math.isnan(x) or math.isnan(y):
+                    if x < -5000 or y < -5000:
                         x1 = 0
                         y1 = 0
                     else:
@@ -102,7 +111,57 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons",map=m
                         device.emit(uinput.ABS_X,x1,syn=False)
                         device.emit(uinput.ABS_Y,y1)
 
-atexit.register(os.system, prox_open)
-os.system(prox_close)
-subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
-emulateMouse()
+def udpInit():
+    global sock
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(('', udp_listen_port))
+    group = socket.inet_aton('224.0.0.1')
+    mreq = struct.pack('4sL', group, socket.INADDR_ANY)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+
+def udpDetect(seconds):
+    t = time.time()
+    sock.settimeout(seconds)
+    while time.time() <= t + seconds:
+        try:
+            data, address = sock.recvfrom(80)
+        except:
+            return False
+        message = data.decode('utf-8')
+        if message.startswith(header):
+            return True
+    return False
+
+
+def udpRead():
+    while True:
+        data, address = sock.recvfrom(80)
+        message = data.decode('utf-8')
+        if message.startswith(header):
+            if time.time() >= lastHeartbeat + heartbeatTime:
+                parts = message.split(' ')
+                try:
+                    out = "LightGun:Request "+socket.gethostbyname(socket.gethostname())
+                    sock.sendto(bytes(out, "utf-8"), (parts[1], udp_send_port))
+                    lastHeartbeat = time.time()
+                except:
+                    pass
+            return message
+
+if __name__ == '__main__':
+    if sys.argv[1] == 'udp':
+        udpInit()
+        reader = udpRead
+    elif sys.argv[1] == 'udpdetect':
+        udpInit()
+        if udpDetect(3):
+            sys.exit(0)
+        else:
+            sys.exit(1)
+    else:
+        atexit.register(os.system, prox_open)
+        os.system(prox_close)
+        subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+        reader = process.stdout.readline
+    emulateMouse(reader)
