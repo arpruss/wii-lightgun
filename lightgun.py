@@ -479,7 +479,7 @@ def identifyPoints(points):
     def rotate(p):
         return (p[0]*c-p[1]*s,p[0]*s+p[1]*c)
         
-    if len(points) == 2:
+    if len(points) == 2 and False:
         p1 = rotate((points[0][0]-cx,points[0][1]-cy))
         if p1[0] < 0:
             identified[0] = 0
@@ -589,7 +589,11 @@ def getIRQuad(ir):
             return None        
         if count == 2:
             identified = identifyPoints(points)
-            return [points[identified.index(0)],points[identified.index(1)],None,None]
+            if 0 in identified and 1 in identified:
+                # currently P2PA only works for the lower two LEDs
+                return [points[identified.index(0)],points[identified.index(1)],None,None]
+            else:
+                return None
             
     if count !=3 and count != 4:
         return None
