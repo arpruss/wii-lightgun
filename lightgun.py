@@ -13,8 +13,13 @@ import argparse
 import subprocess
 import cv2
 
-USE_P3P = True # use P3P if only three points are visible at a given time
-P3P_PROXIMITY_PREFERENCE = True # choose the solution closest to the last solution
+USE_P3P = True # fallback to P3P if only three points are visible 
+P3P_PROXIMITY_PREFERENCE = True # choose the solution closest to the last solution; otherwise, use acceleration data to choose the best solution
+USE_P2PA = True # fallback to P2PA if only bottom markers or only top markers are visible; ensure markers are equal height
+# P2PA is the Section 7 algorithm in https://link.springer.com/article/10.1007/s10851-026-01341-6
+
+if USE_P2PA:
+    from scipy.spatial.transform import Rotation
 
 abortConnect = False
 
@@ -51,17 +56,17 @@ NUNCHUK_Z = cwiid.NUNCHUK_BTN_Z << NUNCHUK_SHIFT
 NUNCHUK_DEADZONE = 40
 NUNCHUK_HYSTERESIS = 10
 ASPECT_RATIO = 1920./1080
-TWO_POINT = True
 #CAMERA_ASPECT_RATIO = 1363./768
 FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4, 1634.5??
 CAMERA_HEIGHT_PIXELS = 768
 
-# for moderate angles, setting this to False gets about half a pixel more
-# precision, which probably isn't worth it
-FAST_CORRECTION = False
 CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
 UNIT_SQUARE = ((0,0), (1,0), (1,1), (0,1))
 
+# For moderate angles, the simple y correction (sightline parallax0 is about half a pixel
+# off and should be a bit faster as it punts more of the computation to cv2. But I haven't
+# really tested the speed.
+SIMPLE_Y_CORRECTION = False
 
 verticalMap = ((cwiid.BTN_B, uinput.BTN_MOUSE),
         (cwiid.BTN_A, uinput.BTN_RIGHT),
@@ -128,7 +133,7 @@ class Config():
         self.aspect = 1920./1080.
         self.ledLocations = None
         self.yCorrection = 0
-        self.ledOffset = 0 # currently only works with TWO_POINT mode
+        self.ledOffset = 0 # currently only works with USE_P2PA mode
         try:
             with open(LED_FILE) as f:
                 s = tuple(map(float,f.readline().strip().split(",")))
@@ -179,14 +184,21 @@ class Config():
                 f.write("aspect %g\n" % self.aspect)
             
     def pointerPosition(self,irQuad):
-        if TWO_POINT:
-            return pointerPositionP2PA(irQuad[0],irQuad[1],lastAccel)
+        valid = []
+        for i in range(4):
+            if irQuad[i] is not None:
+                valid.append(i)
+        if USE_P2PA and len(valid) == 2:
+            return pointerPositionP2PA(irQuad[valid[0]],irQuad[valid[1]],CONFIG.ledLocations[valid[0]],CONFIG.ledLocations[valid[1]],lastAccel)
+            
+        if len(valid) != 4:
+            return None
     
         h = Homography(irQuad,self.ledLocations)
-        if self.yCorrection:
-            if FAST_CORRECTION:
+        if self.yCorrection: # sightline parallax correction
+            if SIMPLE_Y_CORRECTION:
                 xy = h.apply((0,0))
-                xy2 = h.apply((0.01,0.01))
+                xy2 = h.apply((0.01,0.01)) # shouldn't this be (0,0.01)?
                 dx,dy = (xy2[0]-xy[0])*self.aspect,xy2[1]-xy[1]
                 d = math.hypot(dx,dy)
                 return xy[0]+self.yCorrection*dx/d/self.aspect,xy[1]+self.yCorrection*dy/d
@@ -203,9 +215,11 @@ class FakeWiimote():
 def cosAngle(a,b):
     return math.cos( math.atan2(b[1],b[0])-math.atan2(a[1],a[0]) )
 
-def solutionToXYZ(m1,m2,d1,d2,h1,h2): # assuming camera y-coordinate is < marker y-coordinate
-    assert(m1[1]==m2[1]) # for simplicity
-    assert(m1[0]<m2[0])
+def solutionToXYZ(m1,m2,d1,d2,h1,h2): 
+    # assume camera y-coordinate is < marker y-coordinate
+    # assume equal heights
+    if m1[0]>m2[0]:
+        m1,m2,d1,d2,h1,h2 = m2,m1,d2,d1,h2,h1
     # https://npworld.wolfram.com/Circle-CircleIntersection.html with R=d1 and r=d2
     d = math.hypot(m2[1]-m1[1],m2[0]-m1[0])
     x = m1[0]+(d*d-d2*d2+d1*d1)/(2*d) # magnitude of vector from m1 to intersection    
@@ -213,46 +227,25 @@ def solutionToXYZ(m1,m2,d1,d2,h1,h2): # assuming camera y-coordinate is < marker
     z = h1 + m1[2]
     return np.array([x,y,z])
     
-def compute(m1,m2,cos_beta,rho1,rho2):
+def computeP2PA(m1,m2,cos_beta,rho1,rho2):
+    # assume equal heights
     i_is_1 = rho1 != math.pi/2
     if i_is_1:
         rho_i = rho1
         rho_j = rho2
-        delta = m2[2] - m1[2]
     else:
         rho_i = rho2
         rho_j = rho1
-        delta = m1[2] - m2[2]
     cot_j = 1/math.tan(rho_j)
     tan_i = math.tan(rho_i)
-    #cos_beta = math.cos(alpha)
     cottan = cot_j * tan_i
     a = 1-2*cos_beta*cottan + cottan*cottan
     d = math.hypot(m2[1]-m1[1],m2[0]-m1[0])
-    if m2[2] == m1[2]:
-        dj = d/math.sqrt(a)
-        di = dj*cot_j*tan_i
-        hj = -dj * cot_j
-        hi = hj
-        #print("d,di,dj",d,di,dj)
-        #print("hi,hj",hi,hj)
-    else:
-        b = 2*delta*tan_i * (cos_beta-cottan)
-        c = delta*delta*tan_i*tan_i - d*d
-        #assert(a>=0)
-        #assert(b*b-4*a*c>=0)
-        sqrt_disc = math.sqrt(b*b-4*a*c)
-        for s in (-1,1):
-            dj = (-b + s * sqrt_disc)/(2.*a)
-            if dj < 0:
-                continue
-            hj = -dj * cot_j
-            hi = hj + delta
-            di = -(-dj*cot_j+delta)*tan_i
-            if di >= 0:
-                break
-        else:
-            raise ValueError()
+    dj = d/math.sqrt(a)
+    di = dj*cot_j*tan_i
+    hj = -dj * cot_j
+    hi = hj
+
     if i_is_1:
         return (di,dj,hi,hj)
     else:
@@ -260,8 +253,11 @@ def compute(m1,m2,cos_beta,rho1,rho2):
 
 def n(v):
     return np.array(v) / np.linalg.norm(v)
+    
+def cross2D(p,q):
+    return p[0]*q[1]-p[1]*q[0]
         
-def pointerPositionP2PA(p1,p2,g):
+def pointerPositionP2PA(p1,p2,led1,led2,g):
     dir1Orig = np.array([ (p1[0])*CAMERA_HEIGHT_PIXELS,FOCAL_LENGTH_PIXELS,(p1[1])*CAMERA_HEIGHT_PIXELS])
     dir2Orig = np.array([ (p2[0])*CAMERA_HEIGHT_PIXELS,FOCAL_LENGTH_PIXELS,(p2[1])*CAMERA_HEIGHT_PIXELS])
     down = np.array([0.,0.,-1.])
@@ -272,8 +268,9 @@ def pointerPositionP2PA(p1,p2,g):
     # accelerometerRotation.dot(g) should equal down
     dir1 = accelerometerRotation.dot(dir1Orig)
     dir2 = accelerometerRotation.dot(dir2Orig)
-    m1 = (CONFIG.ledLocations[0][0]*CONFIG.aspect,CONFIG.ledOffset,CONFIG.ledLocations[0][1])
-    m2 = (CONFIG.ledLocations[1][0]*CONFIG.aspect,CONFIG.ledOffset,m1[2]) 
+    avgHeight = (led1[1]+led2[1])/2
+    m1 = (led1[0]*CONFIG.aspect,CONFIG.ledOffset,avgHeight)
+    m2 = (led2[0]*CONFIG.aspect,CONFIG.ledOffset,avgHeight) 
     d1 = math.hypot(dir1[0],dir1[1])
     d2 = math.hypot(dir2[0],dir2[1])
     h1 = -dir1[2]
@@ -283,7 +280,7 @@ def pointerPositionP2PA(p1,p2,g):
     rho1 = math.pi-math.atan2(d1,h1)
     rho2 = math.pi-math.atan2(d2,h2)
 
-    cameraPosition = solutionToXYZ(m1,m2,*compute(m1,m2,cos_beta,rho1,rho2))
+    cameraPosition = solutionToXYZ(m1,m2,*computeP2PA(m1,m2,cos_beta,rho1,rho2))
     dir1Obj = m1 - cameraPosition
     dir2Obj = m2 - cameraPosition
     
@@ -367,9 +364,10 @@ class Homography:
 
     def minimumScalingAtOrigin(self, aspect):
         # This measures the lowest scaling between camera and screen coordinates.
-        # Geometric intuition (I haven't proved it) suggests this corresponds to
-        # the correct conversion between camera and screen coordinates for y adjustment.
-        # This is the smallest singular value of the Jacobian at the origin
+        # This should correspond to the correct conversion between camera and screen coordinates 
+        # for y adjustment (sightline parallax).
+        #
+        # Equals the smallest singular value of the Jacobian at the origin
         # ( https://lucidar.me/en/mathematics/singular-value-decomposition-of-a-2x2-matrix/ )
 
         A = aspect*(self.matrix[0][0]-self.matrix[0][2]*self.matrix[2][0])
@@ -464,46 +462,127 @@ def updateAcceleration(accel):
 
 lastQuad = None
 
+def absSlope(p1,p2):
+    if p1[0] == p2[0]:
+        return math.inf
+    return abs((p2[1]-p1[1])/(p2[0]-p1[0]))
+
 def identifyPoints(points):
-    rot = (lastAngle-math.pi/2)
+    n = len(points)
+
+    identified = [None for i in range(n)]
+    
+    if n<2 or (n==2 and not USE_P2PA):
+        return identified
+
+    rot = lastAngle-math.pi/2
     c = math.cos(rot)
     s = math.sin(rot)
 
-    n = len(points)
-
-    cx = sum(p[0] for p in points)/float(n)
-    cy = sum(p[1] for p in points)/float(n)
-
-    identified = [None for i in range(n)]
-
     def rotate(p):
-        return (p[0]*c-p[1]*s,p[0]*s+p[1]*c)
+        x = p[0]
+        y = p[1]
+        return (x*c-y*s,x*s+y*c)
         
-    if len(points) == 2 and False:
-        p1 = rotate((points[0][0]-cx,points[0][1]-cy))
-        if p1[0] < 0:
-            identified[0] = 0
-            identified[1] = 1
-        else:
-            identified[0] = 1
-            identified[1] = 0
+    rp = tuple(map(rotate, points))
+
+    if n == 2:
+        if absSlope(rp[0],rp[1]) < 0.75:
+            # two co-horizontal points for P2PA
+            if rp[0][1] < 0 and rp[1][1] < 0:
+                if rp[0][0] < rp[1][0]:
+                    identified[0] = 0
+                    identified[1] = 1
+                else:
+                    identified[0] = 1
+                    identified[1] = 0
+            elif rp[0][1] > 0 and rp[1][1] > 0:
+                if rp[0][0] < rp[1][0]:
+                    identified[0] = 3
+                    identified[1] = 2
+                else:
+                    identified[0] = 2
+                    identified[1] = 3
+            # the diagonal case typically does not have a 
     else:
+        cx = sum(p[0] for p in points)/float(n)
+        cy = sum(p[1] for p in points)/float(n)
+        
+        ordered = list(range(n))
+        ordered.sort( key=lambda i: math.atan2(points[i][1]-cy,points[i][0]-cx) )
+        
+        if n == 4:
+            # check for convexity
+            for i in range(4):
+                j = (i+1)%4
+                k = (i+2)%4
+                p = (points[ordered[j]][0]-points[ordered[i]][0],points[ordered[j]][1]-points[ordered[i]][1])
+                q = (points[ordered[k]][0]-points[ordered[j]][0],points[ordered[k]][1]-points[ordered[j]][1])
+                if cross2D(p,q) <= 0:
+                    # failure!
+                    return identified
+
+        # find the most horizontal line
+        minSlope = math.inf
+        minSlopeIndex = 0
         for i in range(n):
-            p = rotate((points[i][0]-cx, points[i][1]-cy))
-            if p[0] < 0 and p[1] < 0 and 0 not in identified:
-                identified[i] = 0
-            elif p[0] > 0 and p[1] < 0 and 1 not in identified:
-                identified[i] = 1
-            elif p[0] > 0 and p[1] > 0 and 2 not in identified:
-                identified[i] = 2
-            elif p[0] < 0 and p[1] > 0 and 3 not in identified:
-                identified[i] = 3
+            j = (i+1)%n
+            slope = absSlope(rp[ordered[i]],rp[ordered[j]])
+            if slope < minSlope:
+                minSlope = slope
+                minSlopeIndex = i
 
-        if None in identified:
-            unidentified = list(set(range(n))-set(identified))
-            if len(unidentified) == 1:
-                identified[identified.index(None)] = unidentified[0]
-
+        i = minSlopeIndex
+        j = (minSlopeIndex+1)%n
+        k = (minSlopeIndex+2)%n
+        if n == 4:
+            l = (minSlopeIndex+3)%n
+            if rp[ordered[j]][0] < rp[ordered[i]][0]:
+                # right to left, so ij is upper line
+                identified[ordered[i]] = 2
+                identified[ordered[j]] = 3
+                if 2 * rp[ordered[k]][0] < (rp[ordered[j]][0] + rp[ordered[i]][0]):
+                    # k is to the left of the middle of the upper line segment, so
+                    # assume it's the point 0
+                    identified[ordered[k]] = 0
+                    identified[ordered[l]] = 1
+                else:
+                    # now assume it's point 1
+                    identified[ordered[k]] = 1
+                    identified[ordered[l]] = 0
+            else:
+                # left to right, so ij is lower line
+                identified[ordered[i]] = 0
+                identified[ordered[j]] = 1
+                if 2 * rp[ordered[k]][0] < (rp[ordered[j]][0] + rp[ordered[i]][0]):
+                    # k is to the left of the middle of the lower line segment, so it's3
+                    identified[ordered[k]] = 3
+                    identified[ordered[l]] = 2
+                else:
+                    identified[ordered[k]] = 2
+                    identified[ordered[l]] = 3                
+        else:
+            # n == 3
+            if rp[ordered[j]][0] < rp[ordered[i]][0]:
+                # right to left, so ij is upper line
+                identified[ordered[i]] = 2
+                identified[ordered[j]] = 3
+                if 2 * rp[ordered[k]][0] < (rp[ordered[j]][0] + rp[ordered[i]][0]):
+                    # k is to the left of the middle of the upper line segment, so
+                    # assume it's the point 0
+                    identified[ordered[k]] = 0
+                else:
+                    # now assume it's point 1
+                    identified[ordered[k]] = 1
+            else:
+                # left to right, so ij is lower line
+                identified[ordered[i]] = 0
+                identified[ordered[j]] = 1
+                if 2 * rp[ordered[k]][0] < (rp[ordered[j]][0] + rp[ordered[i]][0]):
+                    # k is to the left of the middle of the lower line segment, so it's3
+                    identified[ordered[k]] = 3
+                else:
+                    identified[ordered[k]] = 2
     return identified
 
 def points3To4(points):
@@ -526,7 +605,7 @@ def points3To4(points):
     if not rvecs:
         return None
 
-    bestR2 = float("inf")
+    bestR2 = math.inf
     missingLED = np.float64((fix(CONFIG.ledLocations[missing]),))
 
     if lastQuad is None or not P3P_PROXIMITY_PREFERENCE:
@@ -584,14 +663,19 @@ def getIRQuad(ir):
     
     points = [getPoint(p) for p in ir if p is not None]
 
-    if TWO_POINT:
+    if USE_P2PA:
         if count < 2:
             return None        
         if count == 2:
             identified = identifyPoints(points)
-            if 0 in identified and 1 in identified:
-                # currently P2PA only works for the lower two LEDs
-                return [points[identified.index(0)],points[identified.index(1)],None,None]
+            if (0 in identified and 1 in identified) or (2 in identified and 3 in identified):
+                q = []
+                for i in range(4):
+                    if i in identified:
+                        q.append(points[identified.index(i)])
+                    else:
+                        q.append(None)
+                return q
             else:
                 return None
             
@@ -701,7 +785,8 @@ def measure(flexible=False,screenWidth=1.):
             CONFIG.setLEDLocations(ledPixel,size)
             CONFIG.yCorrection = yCorrection / size[1]
             s = CONFIG.pointerPosition(irQuad)
-            drawCross(s,color=RED)
+            if s is not None:
+                drawCross(s,color=RED)
 
         drawText("HOME: quit without saving", y=0.5+0.075*2)
         drawText("A: done", y=0.5+0.075*3)
@@ -952,7 +1037,8 @@ def demo():
         showPoints(ir,irQuad)
         if irQuad:
             screenXY = CONFIG.pointerPosition(irQuad)
-            drawCross(screenXY,color=RED)
+            if screenXY is not None:
+                drawCross(screenXY,color=RED)
         pygame.display.flip()
 
     pygame.quit()
@@ -1052,11 +1138,13 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                         ir = wm.state['ir_src']
                         irQuad = getIRQuad(ir)
                         if irQuad:
-                            x,y = CONFIG.pointerPosition(irQuad)
-                            x1 = int(size[0]*x)
-                            y1 = int(size[1]*(1-y))
-                            device.emit(uinput.ABS_X,x1,syn=False)
-                            device.emit(uinput.ABS_Y,y1)
+                            xy = CONFIG.pointerPosition(irQuad)
+                            if xy is not None:
+                                x,y = xy
+                                x1 = int(size[0]*x)
+                                y1 = int(size[1]*(1-y))
+                                device.emit(uinput.ABS_X,x1,syn=False)
+                                device.emit(uinput.ABS_Y,y1)
                             
             except KeyboardInterrupt:
                 pass
@@ -1112,7 +1200,6 @@ if __name__ == '__main__':
     parser.add_argument("-b", "--buttons-name", help="Set name of buttons device", default="WiimoteButtons")
     parser.add_argument("-l", "--led-file", help="Configuration file for LEDs", default=LED_FILE)
     parser.add_argument("-B", "--background-connect", type=float, default=0, help="Connect in background for this many seconds")
-    parser.add_argument("-2", "--two-point", action="store_true", help="Two point mode")
     parser.add_argument("command", help="Run this command while simulating a mouse", nargs="?")
     parser.add_argument("-r", "--rumble", action="store_true", help="Rumble on fire")
     args = parser.parse_args()
@@ -1133,9 +1220,6 @@ if __name__ == '__main__':
         ledLocations = None
     else:
         ledLocations = CONFIG.ledLocations
-    TWO_POINT = args.two_point
-    if TWO_POINT:
-        from scipy.spatial.transform import Rotation
 
     if not args.terminal and (not args.background_connect or not ledLocations or args.center):
         pygame.init()
