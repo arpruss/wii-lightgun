@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import cwiid
+import wiimote
 import uinput
 import time
 import math
@@ -51,8 +51,8 @@ REPEAT_TIME = 0.05
 CENTER_X = 1024/2
 CENTER_Y = 768/2
 NUNCHUK_SHIFT = 16
-NUNCHUK_C = cwiid.NUNCHUK_BTN_C << NUNCHUK_SHIFT
-NUNCHUK_Z = cwiid.NUNCHUK_BTN_Z << NUNCHUK_SHIFT
+NUNCHUK_C = wiimote.NUNCHUK_BTN_C << NUNCHUK_SHIFT
+NUNCHUK_Z = wiimote.NUNCHUK_BTN_Z << NUNCHUK_SHIFT
 NUNCHUK_DEADZONE = 40
 NUNCHUK_HYSTERESIS = 10
 ASPECT_RATIO = 1920./1080
@@ -68,53 +68,53 @@ UNIT_SQUARE = ((0,0), (1,0), (1,1), (0,1))
 # really tested the speed.
 SIMPLE_Y_CORRECTION = False
 
-verticalMap = ((cwiid.BTN_B, uinput.BTN_MOUSE),
-        (cwiid.BTN_A, uinput.BTN_RIGHT),
-        (cwiid.BTN_1, uinput.KEY_Z),
-        (cwiid.BTN_2, uinput.KEY_X),
+verticalMap = ((wiimote.BTN_B, uinput.BTN_MOUSE),
+        (wiimote.BTN_A, uinput.BTN_RIGHT),
+        (wiimote.BTN_1, uinput.KEY_Z),
+        (wiimote.BTN_2, uinput.KEY_X),
         (NUNCHUK_Z, uinput.KEY_S),
         (NUNCHUK_C, uinput.KEY_A),
-        (cwiid.BTN_PLUS, uinput.KEY_SPACE),
-        (cwiid.BTN_HOME, uinput.KEY_ENTER),
-        (cwiid.BTN_DOWN, uinput.KEY_DOWN),
-        (cwiid.BTN_UP, uinput.KEY_UP),
-        (cwiid.BTN_LEFT, uinput.KEY_LEFT),
-        (cwiid.BTN_RIGHT, uinput.KEY_RIGHT))
+        (wiimote.BTN_PLUS, uinput.KEY_SPACE),
+        (wiimote.BTN_HOME, uinput.KEY_ENTER),
+        (wiimote.BTN_DOWN, uinput.KEY_DOWN),
+        (wiimote.BTN_UP, uinput.KEY_UP),
+        (wiimote.BTN_LEFT, uinput.KEY_LEFT),
+        (wiimote.BTN_RIGHT, uinput.KEY_RIGHT))
 
-minusVerticalMap = ((cwiid.BTN_DOWN, uinput.KEY_F6),
-        (cwiid.BTN_UP, uinput.KEY_F7),
-        (cwiid.BTN_LEFT, uinput.KEY_F4),
-        (cwiid.BTN_RIGHT, uinput.KEY_F2),
-        (cwiid.BTN_A, uinput.KEY_F1),
-        (cwiid.BTN_B, uinput.KEY_TAB),
-        (cwiid.BTN_HOME, uinput.KEY_F2),
-        (cwiid.BTN_1, uinput.KEY_LEFTBRACE),
-        (cwiid.BTN_2, uinput.KEY_RIGHTBRACE))
+minusVerticalMap = ((wiimote.BTN_DOWN, uinput.KEY_F6),
+        (wiimote.BTN_UP, uinput.KEY_F7),
+        (wiimote.BTN_LEFT, uinput.KEY_F4),
+        (wiimote.BTN_RIGHT, uinput.KEY_F2),
+        (wiimote.BTN_A, uinput.KEY_F1),
+        (wiimote.BTN_B, uinput.KEY_TAB),
+        (wiimote.BTN_HOME, uinput.KEY_F2),
+        (wiimote.BTN_1, uinput.KEY_LEFTBRACE),
+        (wiimote.BTN_2, uinput.KEY_RIGHTBRACE))
        
 horizontalMap = (
-        (cwiid.BTN_B, uinput.KEY_S),
-        (cwiid.BTN_A, uinput.KEY_A),
-        (cwiid.BTN_1, uinput.KEY_Z),
-        (cwiid.BTN_2, uinput.KEY_X),
+        (wiimote.BTN_B, uinput.KEY_S),
+        (wiimote.BTN_A, uinput.KEY_A),
+        (wiimote.BTN_1, uinput.KEY_Z),
+        (wiimote.BTN_2, uinput.KEY_X),
         (NUNCHUK_Z, uinput.KEY_S),
         (NUNCHUK_C, uinput.KEY_A),
-        (cwiid.BTN_HOME, uinput.KEY_ENTER),
-        (cwiid.BTN_PLUS, uinput.KEY_Q),
-        (cwiid.BTN_DOWN, uinput.KEY_RIGHT),
-        (cwiid.BTN_UP, uinput.KEY_LEFT),
-        (cwiid.BTN_LEFT, uinput.KEY_DOWN),
-        (cwiid.BTN_RIGHT, uinput.KEY_UP))
+        (wiimote.BTN_HOME, uinput.KEY_ENTER),
+        (wiimote.BTN_PLUS, uinput.KEY_Q),
+        (wiimote.BTN_DOWN, uinput.KEY_RIGHT),
+        (wiimote.BTN_UP, uinput.KEY_LEFT),
+        (wiimote.BTN_LEFT, uinput.KEY_DOWN),
+        (wiimote.BTN_RIGHT, uinput.KEY_UP))
 
 minusHorizontalMap = (
-        (cwiid.BTN_DOWN, uinput.KEY_F2),
-        (cwiid.BTN_UP, uinput.KEY_F4),
-        (cwiid.BTN_LEFT, uinput.KEY_F6),
-        (cwiid.BTN_RIGHT, uinput.KEY_F7),
-        (cwiid.BTN_A, uinput.KEY_F1),
-        (cwiid.BTN_B, uinput.KEY_TAB),
-        (cwiid.BTN_HOME, uinput.KEY_F2),
-        (cwiid.BTN_1, uinput.KEY_LEFTBRACE),
-        (cwiid.BTN_2, uinput.KEY_RIGHTBRACE))
+        (wiimote.BTN_DOWN, uinput.KEY_F2),
+        (wiimote.BTN_UP, uinput.KEY_F4),
+        (wiimote.BTN_LEFT, uinput.KEY_F6),
+        (wiimote.BTN_RIGHT, uinput.KEY_F7),
+        (wiimote.BTN_A, uinput.KEY_F1),
+        (wiimote.BTN_B, uinput.KEY_TAB),
+        (wiimote.BTN_HOME, uinput.KEY_F2),
+        (wiimote.BTN_1, uinput.KEY_LEFTBRACE),
+        (wiimote.BTN_2, uinput.KEY_RIGHTBRACE))
        
 class Config():
     def __init__(self):
@@ -721,7 +721,7 @@ def checkQuitAndKeys():
                 screenshot()
             keys.add(event.key)
     if wm and 'buttons' in wm.state:
-        if wm.state['buttons'] & cwiid.BTN_HOME:
+        if wm.state['buttons'] & wiimote.BTN_HOME:
             running = False
             sys.exit(0)
     return keys
@@ -758,7 +758,7 @@ def measure(flexible=False,screenWidth=1.):
             for j in range(2):
                 ledPixel[i][j] = int(math.floor(0.5+CONFIG.ledLocations[i][j]*size[j]))
     
-    buttonMap = ((cwiid.BTN_LEFT,(-1,0)),(cwiid.BTN_RIGHT,(1,0)),(cwiid.BTN_UP,(0,1)),(cwiid.BTN_DOWN,(0,-1)))
+    buttonMap = ((wiimote.BTN_LEFT,(-1,0)),(wiimote.BTN_RIGHT,(1,0)),(wiimote.BTN_UP,(0,1)),(wiimote.BTN_DOWN,(0,-1)))
 
     prevButtons = 0
     prevTime = time.time()
@@ -850,11 +850,11 @@ def measure(flexible=False,screenWidth=1.):
             pygame.draw.rect(surface, VERY_DARK_GREEN, ( [ax-b//2,ay+yCorrection//2-b//2,b,b] ))
             verticalArrow((ax,ay),yCorrection,color=WHITE)
 
-        if pressed & cwiid.BTN_PLUS:
+        if pressed & wiimote.BTN_PLUS:
             corner = (corner+1) % 5
-        elif pressed & cwiid.BTN_MINUS:
+        elif pressed & wiimote.BTN_MINUS:
             corner = (corner-1) % 5
-        elif ( pressed & cwiid.BTN_A ):
+        elif ( pressed & wiimote.BTN_A ):
             done = True
             break                        
             
@@ -931,14 +931,14 @@ def calibrate(flexible=False):
         drawCross(CALIBRATION_CORNERS[corner],color=RED if valid else GRAY)
         if debounced:
             drawText("Press trigger (B"+(" or C" if 'nunchuk' in wm.state else "")+") while pointing at red calibration mark" if irQuad else "Point Wiimote at calibration mark from far enough away")
-        if newButtons & cwiid.BTN_MINUS and len(calibrationData[0]):
+        if newButtons & wiimote.BTN_MINUS and len(calibrationData[0]):
             if corner == 0:
                 corner = len(CALIBRATION_CORNERS)-1
             else:
                 corner -= 1
             if len(calibrationData[corner]):
                 del calibrationData[corner][-1]
-        elif newButtons & (cwiid.BTN_B | NUNCHUK_C) and valid:
+        elif newButtons & (wiimote.BTN_B | NUNCHUK_C) and valid:
             lastCalibrated = time.time()
             z = irQuad.toUnitSquare((0.5,0.5))
             calibrationData[corner].append(z)
@@ -947,7 +947,7 @@ def calibrate(flexible=False):
         if n:
             drawText("Each mark has been calibrated "+("once" if n==1 else "%d times" % n),y=0.7)
             drawText("Press A "+("or C " if 'nunchuk' in wm.state else "")+"button if that's enough",y=0.8)
-            if newButtons & cwiid.BTN_A:
+            if newButtons & wiimote.BTN_A:
                 break
             if not flexible:
                 leds = computeLEDs(calibrationData,flexible)
@@ -1058,9 +1058,9 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
 
     def updateLEDs():
         if horizontal:
-            wm.led = cwiid.LED2_ON | cwiid.LED3_ON
+            wm.led = wiimote.LED2_ON | wiimote.LED3_ON
         else:
-            wm.led = cwiid.LED1_ON | cwiid.LED4_ON
+            wm.led = wiimote.LED1_ON | wiimote.LED4_ON
 
     rumbleStarted = None
 
@@ -1092,8 +1092,8 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                     released = ~buttons & prevButtons
                     prevButtons = buttons
                     
-                    if buttons & cwiid.BTN_MINUS:
-                        if pressed & cwiid.BTN_PLUS:
+                    if buttons & wiimote.BTN_MINUS:
+                        if pressed & wiimote.BTN_PLUS:
                             horizontal = not horizontal
                             updateLEDs()
                         map = minusVerticalMap if not horizontal else minusHorizontalMap
@@ -1160,12 +1160,12 @@ def connect(backgroundTimeout=0):
     CONNECTED_EVENT.clear()
     while True:
         try:
-            wm = cwiid.Wiimote()
+            wm = wiimote.Wiimote()
             print(getAddress(wm))
             wm.mesg_callback = wiimoteCallback
-            wm.enable(cwiid.FLAG_MESG_IFC)
-            wm.rpt_mode = cwiid.RPT_IR | cwiid.RPT_BTN | cwiid.RPT_ACC | cwiid.RPT_EXT
-            wm.led = cwiid.LED1_ON | cwiid.LED4_ON
+            wm.enable(wiimote.FLAG_MESG_IFC)
+            wm.rpt_mode = wiimote.RPT_IR | wiimote.RPT_BTN | wiimote.RPT_ACC | wiimote.RPT_EXT
+            wm.led = wiimote.LED1_ON | wiimote.LED4_ON
             CENTER_X,CENTER_Y = CONFIG.getCenter(wm)
             # give it a bit of extra time for messages to start flowing
             CONNECTED_EVENT.set()
