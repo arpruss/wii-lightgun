@@ -1,4 +1,4 @@
-WIIUSE = False
+WIIUSE = True
 
 if not WIIUSE:
     try:
@@ -7,6 +7,7 @@ if not WIIUSE:
         WIIUSE = True
     
 if WIIUSE:
+    # partial cwiid emulation
     import wiiuse
     import time
     from threading import Thread
@@ -48,7 +49,7 @@ if WIIUSE:
             self.mesg_callback = lambda l,t: None
             self.listenThread = None
             self.reportMode = RPT_BTN
-            self.state = { 'buttons': 0, 'acc': (0,0,0), 'ir_src': [None,None,None,None] }
+            self.state = { 'buttons': 0, 'acc': (128,128,156), 'ir_src': [None,None,None,None] }
             
         @property
         def rpt_mode(self):
@@ -75,12 +76,12 @@ if WIIUSE:
                 ir = []
                 for i in range(4):
                     if self.wm.contents.ir.dot[i].visible:
-                        ir.append({'pos':(self.wm.contents.ir.dot[i].x, self.wm.contents.ir.dot[i].y)})
+                        ir.append({'pos':(1023-self.wm.contents.ir.dot[i].rx, self.wm.contents.ir.dot[i].ry)})
                     else:
                         ir.append(None)
                 newState['ir_src'] = ir
             if (self._reportMode & RPT_ACC) and wiiuse.using_acc(self.wm.contents):
-                newState['acc'] = (self.wm.contents.accel.x,self.wm.contents.accel.y,self.wm.contents.accel.z)
+                newState['acc'] = (0xFF&self.wm.contents.accel.x,0xFF&self.wm.contents.accel.y,0xFF&self.wm.contents.accel.z)
             self.state = newState
             # TODO: nunchuk
             
