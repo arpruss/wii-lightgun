@@ -40,6 +40,7 @@ PYGAME_MODE = True
 RUMBLE_TIME = 0.06
 wm = None
 running = True
+crash = False
 WIIMOTE_EVENT = threading.Event()
 CONNECTED_EVENT = threading.Event()
 DISCONNECT_DETECT_TIME = 4
@@ -341,6 +342,8 @@ def wiimoteWait(timeout=None):
         print("Disconnect detected")
         connect()
         CONNECTED_EVENT.wait()
+        if crash:
+            sys.exit(0)
         print("Reconnected")
     WIIMOTE_EVENT.clear()
     
@@ -444,7 +447,7 @@ lastAccel = [0,0,1]
 def updateAcceleration(accel):
     global lastAngle,lastAccel
     
-    a = accel[0]-128.,accel[1]-128.,accel[2]-128.
+    a = accel[0]-512.,accel[1]-512.,accel[2]-512.
     t = time.time()
     accelHistory.append((t,a))
     while accelHistory[0][0] < t-ACCEL_FILTER_TIME:
@@ -763,6 +766,8 @@ def measure(flexible=False,screenWidth=1.):
     prevButtons = 0
     prevTime = time.time()
     CONNECTED_EVENT.wait()
+    if crash:
+        sys.exit(0)
     
     if not CONFIG.haveCenter(wm):
         center()    
@@ -775,7 +780,7 @@ def measure(flexible=False,screenWidth=1.):
         time.sleep(0.005)
         checkQuitAndKeys()
         surface.fill(DARK_GREEN)
-        updateAcceleration(wm.state['acc'])
+        updateAcceleration(getRawAccel(wm.state))
         ir = wm.state['ir_src']
         irQuad = getIRQuad(ir)
         
@@ -891,6 +896,18 @@ def computeLEDs(calibrationData,flexible):
         
     return leds
 
+def getRawAccel(state):
+    acc = state['acc']
+    x = 4*acc[0]
+    y = 4*acc[1]
+    z = 4*acc[2]
+    # pull extra precision from the buttons on custom build of library
+    buttons = state['buttons']
+    x += 3&(buttons >> 13)
+    y += 2&(buttons >> 4)
+    z += 2&(buttons >> 5)
+    return x,y,z
+
 def calibrate(flexible=False):
     global CALIBRATION_CORNERS,running,surface
 
@@ -909,6 +926,8 @@ def calibrate(flexible=False):
     #  CALIBRATION_CORNERS is in screen coordinates
     
     CONNECTED_EVENT.wait()
+    if crash:
+        sys.exit(1)
     
     if not CONFIG.haveCenter(wm):
         center()
@@ -923,7 +942,7 @@ def calibrate(flexible=False):
         prevButtons = buttons
         checkQuitAndKeys()
         surface.fill(BLACK)
-        updateAcceleration(wm.state['acc'])
+        updateAcceleration(getRawAccel(wm.state))
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
         debounced = 0.5 + lastCalibrated < time.time()
@@ -970,6 +989,8 @@ def calibrate(flexible=False):
 
 def center():
     CONNECTED_EVENT.wait()
+    if crash:
+        sys.exit(1)
 
     running = True
 
@@ -977,7 +998,7 @@ def center():
 
     while running:
         keys = checkQuitAndKeys()
-        updateAcceleration(wm.state['acc'])
+        updateAcceleration(getRawAccel(wm.state))
         surface.fill(BLACK)
         wiimoteWait(0.25)
         if quads[0] is None:
@@ -1022,6 +1043,8 @@ def center():
 
 def demo():
     CONNECTED_EVENT.wait()
+    if crash:
+        sys.exit(1)
 
     running = True
 
@@ -1032,7 +1055,7 @@ def demo():
         buttons = getButtons(wm.state)
         ir = wm.state['ir_src']
         checkQuitAndKeys()
-        updateAcceleration(wm.state['acc'])
+        updateAcceleration(getRawAccel(wm.state))
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
         if irQuad:
@@ -1072,6 +1095,8 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                 prevNunchukY = 128
                 uinputPressed = set()
                 CONNECTED_EVENT.wait()
+                if crash:
+                    sys.exit(1)
                 updateLEDs()
                 
                 def press(dev, u):
@@ -1087,7 +1112,7 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                 while running:
                     wiimoteWait()
                     buttons = getButtons(wm.state)
-                    updateAcceleration(wm.state['acc'])
+                    updateAcceleration(getRawAccel(wm.state))
                     pressed = buttons &~ prevButtons
                     released = ~buttons & prevButtons
                     prevButtons = buttons
@@ -1154,10 +1179,11 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
 
 
 def connect(backgroundTimeout=0):
-    global wm, lastMessage, CENTER_X, CENTER_Y
+    global wm, lastMessage, CENTER_X, CENTER_Y, crash
     wm = None
     t0 = time.time()
     CONNECTED_EVENT.clear()
+    crash = False
     while True:
         try:
             wm = wiimote.Wiimote()
@@ -1177,6 +1203,12 @@ def connect(backgroundTimeout=0):
                 wm = FakeWiimote()
                 CONNECTED_EVENT.set()
                 return
+        except Exception as e:
+            print("Error in thread: ",e)
+            crash = True
+            CONNECTED_EVENT.set()
+            print("Exiting thread")
+            return
 
 def run(command):
     global running, args, abortConnect
@@ -1240,15 +1272,21 @@ if __name__ == '__main__':
                 drawText("Press ESC to exit", y=0.8)
                 pygame.display.flip()
                 CONNECTED_EVENT.wait(0.5)
+                if crash:
+                    sys.exit(1)
             if not running:
                 sys.exit(0)
     elif not args.background_connect:
         print("Press 1+2 on Wii Remote, making sure Wii is turned off.")
         CONNECTED_EVENT.wait()
+        if crash:
+            sys.exit(1)
         print("Ready.")
         
     def cal():
         CONNECTED_EVENT.wait()
+        if crash:
+            sys.exit(1)
         if args.center:
             try:
                 del calibrationFileData[getAddress(wm)]

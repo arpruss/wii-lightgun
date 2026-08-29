@@ -13,6 +13,7 @@ if WIIUSE:
     from threading import Thread
         
     WIIUSE_TIMEOUT = 5
+    EVENT_DT = 0.01
 
     NUNCHUK_BTN_Z = wiiuse.nunchuk_button['Z']
     NUNCHUK_BTN_C = wiiuse.nunchuk_button['C']
@@ -60,6 +61,11 @@ if WIIUSE:
             wiiuse.set_ir(self.wm, 1 if (r & RPT_IR) else 0)
             wiiuse.motion_sensing(self.wm, 1 if (r & RPT_ACC) else 0)
             self._reportMode = r
+            wiiuse.set_flags(self.wm, 0, wiiuse.SMOOTHING)
+            if r & (RPT_IR | RPT_ACC):
+                wiiuse.set_flags(self.wm, wiiuse.CONTINUOUS, 0)
+            else:
+                wiiuse.set_flags(self.wm, 0, wiiuse.CONTINUOUS)
         
         @property
         def led(self):
@@ -87,15 +93,18 @@ if WIIUSE:
             
         def listenLoop(self):
             while True:
+                haveEvent = False
+                t = time.monotonic()
                 if wiiuse.poll(self.wiimotes, 1):
-                    self.mesg_callback([], time.monotonic())
-                    self.updateState()
-                else:
-                    time.sleep(0.01)
+                    if self.wm.contents.event == wiiuse.EVENT:
+                        haveEvent = True
+                        self.updateState()
+                        self.mesg_callback([], t)
+                dt = time.monotonic() - t 
+                if dt < EVENT_DT:
+                    time.sleep(EVENT_DT - dt)
                     
         def enable(self, mode):
             # TODO: handle mode
             self.listenThread = Thread(target = self.listenLoop)
             self.listenThread.start()
-        
-        
