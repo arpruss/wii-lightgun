@@ -63,7 +63,7 @@ CAMERA_HEIGHT_PIXELS = 768
 CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
 UNIT_SQUARE = ((0,0), (1,0), (1,1), (0,1))
 
-# For moderate angles, the simple y correction (sightline parallax0 is about half a pixel
+# For moderate angles, the simple y correction (sightline parallax) is about half a pixel
 # off and should be a bit faster as it punts more of the computation to cv2. But I haven't
 # really tested the speed.
 SIMPLE_Y_CORRECTION = False
