@@ -14,7 +14,7 @@ import subprocess
 import cv2
 
 USE_P3P = True # fallback to P3P if only three points are visible 
-P3P_PROXIMITY_PREFERENCE = True # choose the solution closest to the last solution; otherwise, use acceleration data to choose the best solution
+P3P_PROXIMITY_PREFERENCE = False # choose the solution closest to the last solution; otherwise, use acceleration data to choose the best solution
 USE_P2PA = True # fallback to P2PA if only bottom markers or only top markers are visible; ensure markers are equal height
 # P2PA is the Section 7 algorithm in https://link.springer.com/article/10.1007/s10851-026-01341-6
 
