@@ -1,4 +1,4 @@
-WIIUSE = True
+WIIUSE = False
 
 set_ir_sensitivity = None
 
