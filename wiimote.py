@@ -1,9 +1,37 @@
 WIIUSE = True
 
+set_ir_sensitivity = None
+
 if not WIIUSE:
     try:
         from cwiid import *
-    except:
+        import ctypes
+        import sys
+        
+        IR_LEVELS = ( (b"\x02\x00\x00\x71\x01\x00\x64\x00\xFE", b"\xFD\x05"),
+                      (b"\x02\x00\x00\x71\x01\x00\x96\x00\xB4", b"\xB3\x04"),
+                      (b"\x02\x00\x00\x71\x01\x00\xAA\x00\x64", b"\x63\x03"),
+                      (b"\x02\x00\x00\x71\x01\x00\xC8\x00\x36", b"\x35\x03"),
+                      (b"\x02\x00\x00\x71\x01\x00\x72\x00\x20", b"\x1F\x03") )
+
+        def cwiid_set_ir_sensitivity(value):
+            if value < 0:
+                return
+            lib = ctypes.CDLL(sys.modules['cwiid'].__file__)
+            uint_9 = ctypes.c_uint8*9
+            uint_2 = ctypes.c_uint8*2
+            ir_block1 = uint_9.in_dll(lib, "ir_block1")
+            ir_block2 = uint_2.in_dll(lib, "ir_block2")
+            if value < 1:
+                value = 1
+            elif value > 5:
+                value = 5
+            ir_block1[:] = IR_LEVELS[value-1][0]
+            ir_block2[:] = IR_LEVELS[value-1][1]
+
+        set_ir_sensitivity = cwiid_set_ir_sensitivity
+    except Exception as e:
+        print(e)
         WIIUSE = True
     
 if WIIUSE:
@@ -37,6 +65,17 @@ if WIIUSE:
     RPT_ACC = 4
     RPT_EXT = 8
     FLAG_MESG_IFC = 0
+    irLevel = 3
+
+    def wiiuse_set_ir_sensitivity(level):
+        global irLevel
+
+        if level < 0:
+            return
+
+        irLevel = level
+
+    set_ir_sensitivity = wiiuse_set_ir_sensitivity
 
     # TODO: support more than one wiimote
     class Wiimote:
@@ -51,6 +90,10 @@ if WIIUSE:
             self.listenThread = None
             self.reportMode = RPT_BTN
             self.state = { 'buttons': 0, 'acc': (128,128,156), 'ir_src': [None,None,None,None] }
+            try:
+                self.address = self.wm.contents.bdaddr_str.decode()
+            except:
+                self.address = "wiiuse_wiimote";
             
         @property
         def rpt_mode(self):
@@ -62,6 +105,8 @@ if WIIUSE:
             wiiuse.motion_sensing(self.wm, 1 if (r & RPT_ACC) else 0)
             self._reportMode = r
             wiiuse.set_flags(self.wm, 0, wiiuse.SMOOTHING)
+            if r & RPT_IR:
+                wiiuse.set_ir_sensitivity(self.wm, irLevel)
             if r & (RPT_IR | RPT_ACC):
                 wiiuse.set_flags(self.wm, wiiuse.CONTINUOUS, 0)
             else:

@@ -116,7 +116,7 @@ minusHorizontalMap = (
         (wiimote.BTN_HOME, uinput.KEY_F2),
         (wiimote.BTN_1, uinput.KEY_LEFTBRACE),
         (wiimote.BTN_2, uinput.KEY_RIGHTBRACE))
-       
+
 class Config():
     def __init__(self):
         self.center = {}
@@ -183,6 +183,7 @@ class Config():
                     f.write("%g,%g\n" % tuple(l))
                 f.write("ycorrection %g\n" % self.yCorrection)
                 f.write("aspect %g\n" % self.aspect)
+
             
     def pointerPosition(self,irQuad):
         valid = []
@@ -662,9 +663,9 @@ def getIRQuad(ir):
         return None
 
     # get the IR LED quad, normalized and arranged counterclockwise from lower left
-    count = sum((1 for p in ir if p is not None))
     
     points = [getPoint(p) for p in ir if p is not None]
+    count = len(points)
 
     if USE_P2PA:
         if count < 2:
@@ -1057,6 +1058,8 @@ def demo():
         checkQuitAndKeys()
         updateAcceleration(getRawAccel(wm.state))
         irQuad = getIRQuad(ir)
+        irQuad[2] = None
+        irQuad[3] = None
         showPoints(ir,irQuad)
         if irQuad:
             screenXY = CONFIG.pointerPosition(irQuad)
@@ -1234,6 +1237,7 @@ if __name__ == '__main__':
     parser.add_argument("-B", "--background-connect", type=float, default=0, help="Connect in background for this many seconds")
     parser.add_argument("command", help="Run this command while simulating a mouse", nargs="?")
     parser.add_argument("-r", "--rumble", action="store_true", help="Rumble on fire")
+    parser.add_argument("-s", "--sensitivity", type=int, default=-1, help="IR sensitivity (1-5)")
     args = parser.parse_args()
 
     try:
@@ -1247,6 +1251,9 @@ if __name__ == '__main__':
     thread = threading.Thread(target=connect, args=(args.background_connect,))
     thread.daemon = True
     thread.start()
+
+    if args.sensitivity >= 0:
+        wiimote.set_ir_sensitivity(args.sensitivity)
     
     if args.calibrate or args.measure:
         ledLocations = None
