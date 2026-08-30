@@ -41,7 +41,7 @@ if WIIUSE:
     from threading import Thread
         
     WIIUSE_TIMEOUT = 5
-    EVENT_DT = 0.01
+    EVENT_DT = 1/60.
 
     NUNCHUK_BTN_Z = wiiuse.nunchuk_button['Z']
     NUNCHUK_BTN_C = wiiuse.nunchuk_button['C']

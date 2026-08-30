@@ -36,6 +36,7 @@ VERY_DARK_GREEN = (0,32,0)
 WINDOW_SIZE = None
 PXSCALE = 1
 ACCEL_FILTER_TIME = 0.25
+ACCEL_CUTOFF_FREQ = 12
 PYGAME_MODE = True
 RUMBLE_TIME = 0.06
 wm = None
@@ -63,6 +64,11 @@ CAMERA_HEIGHT_PIXELS = 768
 
 CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
 UNIT_SQUARE = ((0,0), (1,0), (1,1), (0,1))
+
+lastAngle = math.pi / 2
+lastAccel = [0,0,1]
+lastAccelTime = -1
+    
 
 # For moderate angles, the simple y correction (sightline parallax) is about half a pixel
 # off and should be a bit faster as it punts more of the computation to cv2. But I haven't
@@ -441,26 +447,22 @@ def showPoints(ir,irQuad):
 def getPoint(p):
     return (p['pos'][0]-CENTER_X) / 768., (p['pos'][1]-CENTER_Y) / 768.
     
-accelHistory = []    
-lastAngle = math.pi / 2
-lastAccel = [0,0,1]
-    
 def updateAcceleration(accel):
-    global lastAngle,lastAccel
+    global lastAngle,lastAccel,lastAccelTime
     
-    a = accel[0]-512.,accel[1]-512.,accel[2]-512.
-    t = time.time()
-    accelHistory.append((t,a))
-    while accelHistory[0][0] < t-ACCEL_FILTER_TIME:
-        del accelHistory[0]
-    s = [0,0,0]
-    for _,a in accelHistory:
-        s[0] += a[0]
-        s[1] += a[1]
-        s[2] += a[2]
+    a = [accel[0]-512.,accel[1]-512.,accel[2]-512.]
+    t = time.monotonic()
+    if lastAccelTime >= 0:
+        dt = min(max(t-lastAccelTime,.01),.1)
+        alpha = math.exp(-2.0 * math.pi * ACCEL_CUTOFF_FREQ * dt)
+        for i in range(3):
+            a[i] = alpha * lastAccel[i] + (1-alpha) * a[i]
+
+    lastAccelTime = t
+    lastAccel = a
+
     try:
-        lastAccel = s
-        lastAngle = math.atan2(s[2],s[0])
+        lastAngle = math.atan2(a[2],a[0])
     except:
         pass
 
@@ -613,8 +615,7 @@ def points3To4(points):
     missingLED = np.float64((fix(CONFIG.ledLocations[missing]),))
 
     if lastQuad is None or not P3P_PROXIMITY_PREFERENCE:
-        a = accelHistory[-1][1]
-        accel = np.float64((-a[0],a[2],a[1]))
+        accel = np.float64((-lastAccel[0],lastAccel[2],lastAccel[1]))
         base = np.float64((0,math.sqrt(accel[0]*accel[0]+accel[1]*accel[1]+accel[2]*accel[2]),0))
         best = None
         bestR2 = None
@@ -633,8 +634,6 @@ def points3To4(points):
 
         proj = cv2.projectPoints(missingLED,rvecs[best],tvecs[best],INTRINSIC,None)[0][0][0]
     else:
-        if not accelHistory:
-            return None
         bestProj = None
         for i in range(len(rvecs)):
             if not np.isnan(tvecs[i][0]):
