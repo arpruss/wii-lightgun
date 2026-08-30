@@ -1,6 +1,7 @@
 WIIUSE = False
 
 set_ir_sensitivity = None
+NEVER_CONTINUOUS = True
 
 if not WIIUSE:
     try:
@@ -30,7 +31,7 @@ if not WIIUSE:
             ir_block2[:] = IR_LEVELS[value-1][1]
 
         set_ir_sensitivity = cwiid_set_ir_sensitivity
-    except Exception as e:
+    except ModuleNotFoundError as e:
         print(e)
         WIIUSE = True
     
@@ -41,7 +42,7 @@ if WIIUSE:
     from threading import Thread
         
     WIIUSE_TIMEOUT = 5
-    EVENT_DT = 1/60.
+    EVENT_DT = .01
 
     NUNCHUK_BTN_Z = wiiuse.nunchuk_button['Z']
     NUNCHUK_BTN_C = wiiuse.nunchuk_button['C']
@@ -107,7 +108,7 @@ if WIIUSE:
             wiiuse.set_flags(self.wm, 0, wiiuse.SMOOTHING)
             if r & RPT_IR:
                 wiiuse.set_ir_sensitivity(self.wm, irLevel)
-            if r & (RPT_IR | RPT_ACC):
+            if (r & (RPT_IR | RPT_ACC)) and not NEVER_CONTINUOUS:
                 wiiuse.set_flags(self.wm, wiiuse.CONTINUOUS, 0)
             else:
                 wiiuse.set_flags(self.wm, 0, wiiuse.CONTINUOUS)
@@ -145,9 +146,8 @@ if WIIUSE:
                         haveEvent = True
                         self.updateState()
                         self.mesg_callback([], t)
-                dt = time.monotonic() - t 
-                if dt < EVENT_DT:
-                    time.sleep(EVENT_DT - dt)
+                if not haveEvent:
+                    time.sleep(EVENT_DT)
                     
         def enable(self, mode):
             # TODO: handle mode
