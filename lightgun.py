@@ -1058,8 +1058,6 @@ def demo():
         checkQuitAndKeys()
         updateAcceleration(getRawAccel(wm.state))
         irQuad = getIRQuad(ir)
-        irQuad[2] = None
-        irQuad[3] = None
         showPoints(ir,irQuad)
         if irQuad:
             screenXY = CONFIG.pointerPosition(irQuad)
