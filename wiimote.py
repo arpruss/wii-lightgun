@@ -89,7 +89,7 @@ if WIIUSE:
             self.wm = self.wiimotes[0]
             self.mesg_callback = lambda l,t: None
             self.listenThread = None
-            self.reportMode = RPT_BTN
+            self._reportMode = RPT_BTN
             self.state = { 'buttons': 0, 'acc': (128,128,156), 'ir_src': [None,None,None,None] }
             try:
                 self.address = self.wm.contents.bdaddr_str.decode()
