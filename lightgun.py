@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 import wiimote
-import uinput
+import myinput
 import time
 import math
 import os
@@ -75,53 +75,53 @@ lastAccelTime = -1
 # really tested the speed.
 SIMPLE_Y_CORRECTION = False
 
-verticalMap = ((wiimote.BTN_B, uinput.BTN_MOUSE),
-        (wiimote.BTN_A, uinput.BTN_RIGHT),
-        (wiimote.BTN_1, uinput.KEY_Z),
-        (wiimote.BTN_2, uinput.KEY_X),
-        (NUNCHUK_Z, uinput.KEY_S),
-        (NUNCHUK_C, uinput.KEY_A),
-        (wiimote.BTN_PLUS, uinput.KEY_SPACE),
-        (wiimote.BTN_HOME, uinput.KEY_ENTER),
-        (wiimote.BTN_DOWN, uinput.KEY_DOWN),
-        (wiimote.BTN_UP, uinput.KEY_UP),
-        (wiimote.BTN_LEFT, uinput.KEY_LEFT),
-        (wiimote.BTN_RIGHT, uinput.KEY_RIGHT))
+verticalMap = ((wiimote.BTN_B, myinput.BTN_LEFT),
+        (wiimote.BTN_A, myinput.BTN_RIGHT),
+        (wiimote.BTN_1, myinput.KEY_Z),
+        (wiimote.BTN_2, myinput.KEY_X),
+        (NUNCHUK_Z, myinput.KEY_S),
+        (NUNCHUK_C, myinput.KEY_A),
+        (wiimote.BTN_PLUS, myinput.KEY_SPACE),
+        (wiimote.BTN_HOME, myinput.KEY_ENTER),
+        (wiimote.BTN_DOWN, myinput.KEY_DOWN),
+        (wiimote.BTN_UP, myinput.KEY_UP),
+        (wiimote.BTN_LEFT, myinput.KEY_LEFT),
+        (wiimote.BTN_RIGHT, myinput.KEY_RIGHT))
 
-minusVerticalMap = ((wiimote.BTN_DOWN, uinput.KEY_F6),
-        (wiimote.BTN_UP, uinput.KEY_F7),
-        (wiimote.BTN_LEFT, uinput.KEY_F4),
-        (wiimote.BTN_RIGHT, uinput.KEY_F2),
-        (wiimote.BTN_A, uinput.KEY_F1),
-        (wiimote.BTN_B, uinput.KEY_TAB),
-        (wiimote.BTN_HOME, uinput.KEY_F2),
-        (wiimote.BTN_1, uinput.KEY_LEFTBRACE),
-        (wiimote.BTN_2, uinput.KEY_RIGHTBRACE))
+minusVerticalMap = ((wiimote.BTN_DOWN, myinput.KEY_F6),
+        (wiimote.BTN_UP, myinput.KEY_F7),
+        (wiimote.BTN_LEFT, myinput.KEY_F4),
+        (wiimote.BTN_RIGHT, myinput.KEY_F2),
+        (wiimote.BTN_A, myinput.KEY_F1),
+        (wiimote.BTN_B, myinput.KEY_TAB),
+        (wiimote.BTN_HOME, myinput.KEY_F2),
+        (wiimote.BTN_1, myinput.KEY_LEFTBRACE),
+        (wiimote.BTN_2, myinput.KEY_RIGHTBRACE))
        
 horizontalMap = (
-        (wiimote.BTN_B, uinput.KEY_S),
-        (wiimote.BTN_A, uinput.KEY_A),
-        (wiimote.BTN_1, uinput.KEY_Z),
-        (wiimote.BTN_2, uinput.KEY_X),
-        (NUNCHUK_Z, uinput.KEY_S),
-        (NUNCHUK_C, uinput.KEY_A),
-        (wiimote.BTN_HOME, uinput.KEY_ENTER),
-        (wiimote.BTN_PLUS, uinput.KEY_Q),
-        (wiimote.BTN_DOWN, uinput.KEY_RIGHT),
-        (wiimote.BTN_UP, uinput.KEY_LEFT),
-        (wiimote.BTN_LEFT, uinput.KEY_DOWN),
-        (wiimote.BTN_RIGHT, uinput.KEY_UP))
+        (wiimote.BTN_B, myinput.KEY_S),
+        (wiimote.BTN_A, myinput.KEY_A),
+        (wiimote.BTN_1, myinput.KEY_Z),
+        (wiimote.BTN_2, myinput.KEY_X),
+        (NUNCHUK_Z, myinput.KEY_S),
+        (NUNCHUK_C, myinput.KEY_A),
+        (wiimote.BTN_HOME, myinput.KEY_ENTER),
+        (wiimote.BTN_PLUS, myinput.KEY_Q),
+        (wiimote.BTN_DOWN, myinput.KEY_RIGHT),
+        (wiimote.BTN_UP, myinput.KEY_LEFT),
+        (wiimote.BTN_LEFT, myinput.KEY_DOWN),
+        (wiimote.BTN_RIGHT, myinput.KEY_UP))
 
 minusHorizontalMap = (
-        (wiimote.BTN_DOWN, uinput.KEY_F2),
-        (wiimote.BTN_UP, uinput.KEY_F4),
-        (wiimote.BTN_LEFT, uinput.KEY_F6),
-        (wiimote.BTN_RIGHT, uinput.KEY_F7),
-        (wiimote.BTN_A, uinput.KEY_F1),
-        (wiimote.BTN_B, uinput.KEY_TAB),
-        (wiimote.BTN_HOME, uinput.KEY_F2),
-        (wiimote.BTN_1, uinput.KEY_LEFTBRACE),
-        (wiimote.BTN_2, uinput.KEY_RIGHTBRACE))
+        (wiimote.BTN_DOWN, myinput.KEY_F2),
+        (wiimote.BTN_UP, myinput.KEY_F4),
+        (wiimote.BTN_LEFT, myinput.KEY_F6),
+        (wiimote.BTN_RIGHT, myinput.KEY_F7),
+        (wiimote.BTN_A, myinput.KEY_F1),
+        (wiimote.BTN_B, myinput.KEY_TAB),
+        (wiimote.BTN_HOME, myinput.KEY_F2),
+        (wiimote.BTN_1, myinput.KEY_LEFTBRACE),
+        (wiimote.BTN_2, myinput.KEY_RIGHTBRACE))
 
 class Config():
     def __init__(self):
@@ -1070,14 +1070,6 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
     global running
     
     size = WINDOW_SIZE or (1920,int(0.5+1920/CONFIG.aspect))
-    events = [
-        uinput.ABS_X + (0,size[0],0,0),
-        uinput.ABS_Y + (0,size[1],0,0),
-        uinput.BTN_LEFT,
-        uinput.BTN_RIGHT
-        ]
-        
-    events2 = [(uinput.KEY_ESC[0],i) for i in range(uinput.KEY_ESC[1], uinput.KEY_MICMUTE[1]+1)]
 
     def updateLEDs():
         if horizontal:
@@ -1087,8 +1079,8 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
 
     rumbleStarted = None
 
-    with uinput.Device(events,name=mouseName) as device:
-        with uinput.Device(events2,name=controllerName) as device2:
+    with myinput.AbsMouseInput(size, name=mouseName) as device:
+        with myinput.KeyInput(name=controllerName) as device2:
             try:
                 prevButtons = 0
                 prevNunchukX = 128
@@ -1101,12 +1093,12 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                 
                 def press(dev, u):
                     if u not in uinputPressed:
-                        dev.emit(u, 1)
+                        dev.press(u)
                         uinputPressed.add(u)
                         
                 def release(dev, u):
                     if u in uinputPressed:
-                        dev.emit(u, 0)
+                        dev.release(u)
                         uinputPressed.remove(u)
                 
                 while running:
@@ -1131,7 +1123,7 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                         map = verticalMap if not horizontal else horizontalMap
 
                         for wii,u in map:
-                            dev = device if (u == uinput.BTN_LEFT or u == uinput.BTN_RIGHT) else device2
+                            dev = device if (u == myinput.BTN_LEFT or u == myinput.BTN_RIGHT) else device2
                             if pressed & wii:
                                 press(dev, u)
                                 if rumble:
@@ -1152,10 +1144,10 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
 
                         x,y = wm.state['nunchuk']['stick']
 
-                        stick(x-128,prevNunchukX-128,uinput.KEY_RIGHT)
-                        stick(128-x,128-prevNunchukX,uinput.KEY_LEFT)
-                        stick(y-128,prevNunchukY-128,uinput.KEY_UP)
-                        stick(128-y,128-prevNunchukY,uinput.KEY_DOWN)
+                        stick(x-128,prevNunchukX-128,myinput.KEY_RIGHT)
+                        stick(128-x,128-prevNunchukX,myinput.KEY_LEFT)
+                        stick(y-128,prevNunchukY-128,myinput.KEY_UP)
+                        stick(128-y,128-prevNunchukY,myinput.KEY_DOWN)
 
                         prevNunchukX, prevNunchukY = x,y
 
@@ -1168,15 +1160,13 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                                 x,y = xy
                                 x1 = int(size[0]*x)
                                 y1 = int(size[1]*(1-y))
-                                device.emit(uinput.ABS_X,x1,syn=False)
-                                device.emit(uinput.ABS_Y,y1)
+                                device.moveTo(x1,y1)
                             
             except KeyboardInterrupt:
                 pass
             finally:
                 for u in uinputPressed:
-                    (device if u == uinput.BTN_LEFT or u == uinput.BTN_RIGHT else device2).emit(u, 0)
-
+                    (device if u == myinput.BTN_LEFT or u == myinput.BTN_RIGHT else device2).release(u)
 
 def connect(backgroundTimeout=0):
     global wm, lastMessage, CENTER_X, CENTER_Y, crash
