@@ -29,7 +29,7 @@ try:
             self.device.emit(button, 0)
             
     class KeyInput:
-        def __init__(self, size, name="Keys"):
+        def __init__(self, name="Keys"):
             events = [(KEY_ESC[0],i) for i in range(KEY_ESC[1], KEY_MICMUTE[1]+1)]
             self.device = Device(events, name=name)
             
