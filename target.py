@@ -113,6 +113,7 @@ def PlayGame():
     return running
 
 print("Press 1+2 on Wiimote, ensuring Wii is off.")
+lightgun.CONFIG = lightgun.Config()
 lightgun.connect()
 t = threading.Thread(target=lightgun.emulateMouse,kwargs={"mouseName":"miniMouse", "rumble":True})
 t.daemon = True
