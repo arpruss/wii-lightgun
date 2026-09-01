@@ -450,7 +450,22 @@ def getPoint(p):
 def updateAcceleration(accel):
     global lastAngle,lastAccel,lastAccelTime
     
-    a = [accel[0]-512.,accel[1]-512.,accel[2]-512.]
+    ca = None   
+    if hasattr(wm, 'accel0gCalibration'):
+        ca = wm.accel0gCalibration
+    if ca == None:
+        ca = [512,512,512]
+    
+    a = (accel[0]-ca[0],accel[1]-ca[1],accel[2]-ca[2])
+    
+    ga = None
+    if hasattr(wm, 'accel1gCalibration'):
+        ga = wm.accel1gCalibration
+    if ga == None:
+        ga = [100,100,100]
+        
+    a = [a[0]/ga[0],a[1]/ga[1],a[2]/ga[2]]
+    
     t = time.monotonic()
     if lastAccelTime >= 0:
         dt = min(max(t-lastAccelTime,.01),.1)
@@ -664,6 +679,7 @@ def getIRQuad(ir):
     # get the IR LED quad, normalized and arranged counterclockwise from lower left
     
     points = [getPoint(p) for p in ir if p is not None]
+
     count = len(points)
 
     if USE_P2PA:
@@ -1177,6 +1193,7 @@ def connect(backgroundTimeout=0):
     while True:
         try:
             wm = wiimote.Wiimote()
+            wm.calibrate()
             print(getAddress(wm))
             wm.mesg_callback = wiimoteCallback
             wm.enable(wiimote.FLAG_MESG_IFC)
