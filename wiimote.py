@@ -1,4 +1,4 @@
-WIIUSE = False
+WIIUSE = True
 
 set_ir_sensitivity = None
 NEVER_CONTINUOUS = True
@@ -43,11 +43,28 @@ def parseAccelCalibration(data):
     
     return accel0g, accel1g
 
+def setCalibration(wm,buffer):
+    irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_1:])
+    if not irc:
+        irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_2:])
+    if irc:
+        wm.irCalibration = irc
+    acc = parseAccelCalibration(buffer[ACCEL_CALIBRATION_OFFSET:])
+    if acc:
+        wm.accel0gCalibration = acc[0]
+        wm.accel1gCalibration = acc[1]
+
 if not WIIUSE:
     try:
         from cwiid import *
         import ctypes
         import sys
+        import time
+
+        libcwiid = ctypes.CDLL(sys.modules['cwiid'].__file__)
+        libcwiid.cwiid_read.argtypes = [ ctypes.c_void_p, ctypes.c_uint8, ctypes.c_uint32, ctypes.c_uint16, ctypes.c_void_p ]
+        libcwiid.cwiid_read.restype = ctypes.c_int
+
         IR_LEVELS = ( (b"\x02\x00\x00\x71\x01\x00\x64\x00\xFE", b"\xFD\x05"),
                       (b"\x02\x00\x00\x71\x01\x00\x96\x00\xB4", b"\xB3\x04"),
                       (b"\x02\x00\x00\x71\x01\x00\xAA\x00\x64", b"\x63\x03"),
@@ -57,37 +74,30 @@ if not WIIUSE:
         def cwiid_set_ir_sensitivity(value):
             if value < 0:
                 return
-            lib = ctypes.CDLL(sys.modules['cwiid'].__file__)
             uint_9 = ctypes.c_uint8*9
             uint_2 = ctypes.c_uint8*2
-            ir_block1 = uint_9.in_dll(lib, "ir_block1")
-            ir_block2 = uint_2.in_dll(lib, "ir_block2")
+            ir_block1 = uint_9.in_dll(libcwiid, "ir_block1")
+            ir_block2 = uint_2.in_dll(libcwiid, "ir_block2")
             if value < 1:
                 value = 1
             elif value > 5:
                 value = 5
             ir_block1[:] = IR_LEVELS[value-1][0]
             ir_block2[:] = IR_LEVELS[value-1][1]
-                        
-        def calibrate(wm):
-            wm.calibrationBuffer = ctypes.create_string_buffer(CALIBRATION_SIZE)
-            buffer = self.read(RW_EEPROM, CALIBRATION_OFFSET, CALIBRATION_SIZE)
-            wm.irCalibration = None
-            wm.accel0gCalibration = None
-            wm.accel1gCalibration = None
-            if len(buffer) == CALIBRATION_SIZE:
-                irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_1:])
-                if not irc:
-                    irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_2:])
-                if irc:
-                    wm.irCalibration = irc
-                acc = parseAccelCalibration(buffer[ACCEL_CALIBRATION_OFFSET:])
-                if acc:
-                    wm.accel0gCalibration = acc[0]
-                    wm.accel1gCalibration = acc[1]
-            print(wm.irCalibration,wm.accel0gCalibration,wm.accel1gCalibration)
 
-        Wiimote.calibrate = Wiimote_calibrate
+        class MyWiimote(Wiimote):
+            def __init__(self):
+                self.irCalibration = None
+                self.accel0gCalibration = None
+                self.accel1gCalibration = None
+                Wiimote.__init__(self)
+                self.calibrate()
+
+            def calibrate(self):
+                data = self.read(RW_EEPROM, CALIBRATION_OFFSET, CALIBRATION_SIZE)
+                if len(data) == CALIBRATION_SIZE:
+                    setCalibration(self,data)
+                        
         set_ir_sensitivity = cwiid_set_ir_sensitivity
     except ModuleNotFoundError as e:
         WIIUSE = True
@@ -139,7 +149,7 @@ if WIIUSE:
     set_ir_sensitivity = wiiuse_set_ir_sensitivity
 
     # TODO: support more than one wiimote
-    class Wiimote:
+    class MyWiimote:
         def __init__(self):
             self.wiimotes = wiiuse.init(1)
             if not wiiuse.find(self.wiimotes, 1, WIIUSE_TIMEOUT):
@@ -175,6 +185,7 @@ if WIIUSE:
                 wiiuse.set_flags(self.wm, wiiuse.CONTINUOUS, 0)
             else:
                 wiiuse.set_flags(self.wm, 0, wiiuse.CONTINUOUS)
+            self.calibrate()
         
         @property
         def led(self):
@@ -209,16 +220,6 @@ if WIIUSE:
                         haveEvent = True
                         self.updateState()
                         self.mesg_callback([], t)
-                    elif self.wm.contents.event == wiiuse.READ_DATA and not self.irCalibration and not self.accel0gCalibration:
-                        irc = parseIRCalibration(self.calibrationBuffer[IR_CALIBRATION_OFFSET_1:])
-                        if not irc:
-                            irc = parseIRCalibration(self.calibrationBuffer[IR_CALIBRATION_OFFSET_2:])
-                        if irc:
-                            self.irCalibration = irc
-                        acc = parseAccelCalibration(self.calibrationBuffer[ACCEL_CALIBRATION_OFFSET:])
-                        if acc:
-                            self.accel0gCalibration = acc[0]
-                            self.accel1gCalibration = acc[1]
                 if not haveEvent:
                     time.sleep(EVENT_DT)
                     
@@ -227,28 +228,20 @@ if WIIUSE:
             self.listenThread = Thread(target = self.listenLoop)
             self.listenThread.start()
 
-    def calibrate(wm): # call before enable()
-        wm.irCalibration = None
-        wm.accel0gCalibration = None
-        wm.accel1gCalibration = None
-        wm.calibrationBuffer = ctypes.create_string_buffer(CALIBRATION_SIZE)
-        wiiuse.read_data(wm.wm, wm.calibrationBuffer, CALIBRATION_OFFSET, CALIBRATION_SIZE)
-        t = time.monotonic()
-        while time.monotonic() < t + 6:
-            if wiiuse.poll(wm.wiimotes, 1):
-                if wm.wm.contents.event == wiiuse.READ_DATA and not wm.irCalibration and not wm.accel0gCalibration:
-                    irc = parseIRCalibration(wm.calibrationBuffer[IR_CALIBRATION_OFFSET_1:])
-                    if not irc:
-                        irc = parseIRCalibration(wm.calibrationBuffer[IR_CALIBRATION_OFFSET_2:])
-                    if irc:
-                        wm.irCalibration = irc
-                    acc = parseAccelCalibration(wm.calibrationBuffer[ACCEL_CALIBRATION_OFFSET:])
-                    if acc:
-                        wm.accel0gCalibration = acc[0]
-                        wm.accel1gCalibration = acc[1]
-                    if irc and acc:
-                        if wm.address == "wiiuse_wiimote":
-                            wm.address = hashlib.md5(wm.calibrationBuffer.raw).hexdigest()
-                        break
+        def calibrate(self): # call before enable()
+            self.irCalibration = None
+            self.accel0gCalibration = None
+            self.accel1gCalibration = None
+            buffer = ctypes.create_string_buffer(CALIBRATION_SIZE)
+            wiiuse.read_data(self.wm, buffer, CALIBRATION_OFFSET, CALIBRATION_SIZE)
+            t = time.monotonic()
+            while time.monotonic() < t + 6:
+                if wiiuse.poll(self.wiimotes, 1):
+                    if self.wm.contents.event == wiiuse.READ_DATA and not self.irCalibration and not self.accel0gCalibration:
+                        setCalibration(self,buffer)
+                        if self.irCalibration and self.accel0gCalibration:
+                            if self.address == "wiiuse_wiimote":
+                                self.address = hashlib.md5(buffer.raw).hexdigest()
+                    time.sleep(.01)
         
     
