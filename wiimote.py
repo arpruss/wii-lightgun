@@ -2,38 +2,69 @@ WIIUSE = False
 
 set_ir_sensitivity = None
 NEVER_CONTINUOUS = True
+IR_CALIBRATION_LOCATIONS = ( ((0,2,4),(1,2,6)),  # X1,Y1
+                             ((3,2,0),(4,2,2)),  # X2,Y2
+                             ((5,7,4),(6,7,6)),  # X3,Y3
+                             ((8,7,0),(9,7,2)) ) # X4,Y4 
+                             
+ACCEL_0G_CALIBRATION_LOCATIONS = ( (0,3,4), (1,3,2), (2,3,0) )
+ACCEL_1G_CALIBRATION_LOCATIONS = ( (4,7,4), (5,7,2), (6,7,0) )
+
+def parseIRCalibration(data):
+    if len(data) < 11:
+        return None
+    s = (0x55 + sum(data[i] & 0xFF for i in range(10))) & 0xFF
+    if s != (data[10] & 0xFF):
+        return None
+    def getCoordinate(bits07_offset,bits89_offset,bits89_shift):
+        return (data[bits07_offset] & 0xFF) | (((data[bits89_offset] >> bits89_shift) & 0x3) << 8)    
+    
+    return tuple( (getCoordinate(*icl[0]), getCoordinate(*icl[1])) for icl in IR_CALIBRATION_LOCATIONS)
+
+def parseAccelCalibration(data):
+    if len(data) < 10:
+        return None
+    s = (0x55 + sum(data[i] & 0xFF for i in range(9))) & 0xFF
+    if s != (data[9] & 0xFF):
+        return None
+    def getCoordinate(bits29_offset,bits01_offset,bits01_shift):
+        return ((data[bits29_offset] & 0xFF) << 2) | ((data[bits01_offset] >> bits01_shift) & 0x3)    
+        
+    accel0g = tuple( getCoordinate(*cl) for cl in ACCEL_0G_CALIBRATION_LOCATIONS )
+    accel1g = tuple( getCoordinate(*cl) for cl in ACCEL_1G_CALIBRATION_LOCATIONS )
+    
+    return accel0g, accel1g
 
 if not WIIUSE:
     try:
         from cwiid import *
-        import ctypes
-        import sys
-        
-        IR_LEVELS = ( (b"\x02\x00\x00\x71\x01\x00\x64\x00\xFE", b"\xFD\x05"),
-                      (b"\x02\x00\x00\x71\x01\x00\x96\x00\xB4", b"\xB3\x04"),
-                      (b"\x02\x00\x00\x71\x01\x00\xAA\x00\x64", b"\x63\x03"),
-                      (b"\x02\x00\x00\x71\x01\x00\xC8\x00\x36", b"\x35\x03"),
-                      (b"\x02\x00\x00\x71\x01\x00\x72\x00\x20", b"\x1F\x03") )
-
-        def cwiid_set_ir_sensitivity(value):
-            if value < 0:
-                return
-            lib = ctypes.CDLL(sys.modules['cwiid'].__file__)
-            uint_9 = ctypes.c_uint8*9
-            uint_2 = ctypes.c_uint8*2
-            ir_block1 = uint_9.in_dll(lib, "ir_block1")
-            ir_block2 = uint_2.in_dll(lib, "ir_block2")
-            if value < 1:
-                value = 1
-            elif value > 5:
-                value = 5
-            ir_block1[:] = IR_LEVELS[value-1][0]
-            ir_block2[:] = IR_LEVELS[value-1][1]
-
-        set_ir_sensitivity = cwiid_set_ir_sensitivity
     except ModuleNotFoundError as e:
-        print(e)
         WIIUSE = True
+    import ctypes
+    import sys
+    
+    IR_LEVELS = ( (b"\x02\x00\x00\x71\x01\x00\x64\x00\xFE", b"\xFD\x05"),
+                  (b"\x02\x00\x00\x71\x01\x00\x96\x00\xB4", b"\xB3\x04"),
+                  (b"\x02\x00\x00\x71\x01\x00\xAA\x00\x64", b"\x63\x03"),
+                  (b"\x02\x00\x00\x71\x01\x00\xC8\x00\x36", b"\x35\x03"),
+                  (b"\x02\x00\x00\x71\x01\x00\x72\x00\x20", b"\x1F\x03") )
+
+    def cwiid_set_ir_sensitivity(value):
+        if value < 0:
+            return
+        lib = ctypes.CDLL(sys.modules['cwiid'].__file__)
+        uint_9 = ctypes.c_uint8*9
+        uint_2 = ctypes.c_uint8*2
+        ir_block1 = uint_9.in_dll(lib, "ir_block1")
+        ir_block2 = uint_2.in_dll(lib, "ir_block2")
+        if value < 1:
+            value = 1
+        elif value > 5:
+            value = 5
+        ir_block1[:] = IR_LEVELS[value-1][0]
+        ir_block2[:] = IR_LEVELS[value-1][1]
+
+    set_ir_sensitivity = cwiid_set_ir_sensitivity
     
 if WIIUSE:
     # partial cwiid emulation
