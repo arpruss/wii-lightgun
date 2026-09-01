@@ -5,7 +5,7 @@ If you have both installed, edit wiimote.py to set WIIUSE = True or WIIUSE = Fal
 depending on whether you want to use wiiuse.
 
 CWIID notes:
-    On Raspberry PI, you may want to use this fork: https://github.com/arpruss/cwiid-1
+    On Linux if you want to use CWIID, you should use this fixed fork: https://github.com/arpruss/cwiid-1
 
 WIIUSE notes:
     Install my python fork of the wiiuse wrapper: https://github.com/arpruss/pywiiuse
