@@ -93,7 +93,9 @@ class MyWiimote:
         self.timeout = 5
         self.callback = lambda data,t: None
         
+        self.led = 0x60
         self.calibrate()
+        self.led = 0xF0-0x60
         
     @property
     def led(self):
@@ -101,7 +103,7 @@ class MyWiimote:
     
     @led.setter
     def led(self, l):
-        self.handle.write((0x10,l))
+        self.handle.write((0x11,l))
         self._leds = l
         
     def read_sync(self,location,address,size):
@@ -132,28 +134,33 @@ class MyWiimote:
         paddedData = list(data) + (16-len(data)) * [0,]
         write_cmd = bytes([0x16, RW_REG, (address&0xFF0000)>>16, (address&0xFF00)>>8, address&0xFF, len(data)] + paddedData)
         self.handle.write(write_cmd)
-        time.sleep(0.1)
             
-    def enable(self,mode,irLevel=3): # mode is ignored
+    def enable(self,mode,irLevel=5): # mode is ignored
         self.listenThread = Thread(target = self.listening, args=(mode,irLevel,))
         self.listenThread.start()
     
     def listening(self,mode,irLevel):
         # enable camera in extended data mode
-        for i in range(5):
-            self.handle.write(bytes((0x13, 0x04)))
-            self.handle.write(bytes((0x1A, 0x04)))
-            self.write_reg(0xb00030,(0x08,))
-            irLevel = max(min(irLevel,5),1)
-            self.write_reg(0xb00000,IR_LEVELS[irLevel][0])
-            self.write_reg(0xb0001a,IR_LEVELS[irLevel][1])
-            self.write_reg(0xb00033,(3,)) # extended
-            #self.write_reg(0xb00030,(0x08,))
-            self.handle.write(bytes((0x12, 0x04, 0x37))) # continuous reporting
+        self.handle.write(bytes((0x13, 0x04)))
+        time.sleep(0.05)
+        self.handle.write(bytes((0x1A, 0x04)))
+        time.sleep(0.05)
+        self.write_reg(0xb00030,(0x01,)) 
+        time.sleep(0.05)
+        lev = IR_LEVELS[max(min(irLevel,5),1)-1]
+        self.write_reg(0xb00000,lev[0])
+        time.sleep(0.05)
+        self.write_reg(0xb0001a,lev[1])
+        time.sleep(0.05)
+        self.write_reg(0xb00033,(2,)) # extended
+        time.sleep(0.05)
+        self.write_reg(0xb00030,(0x08,))
+        time.sleep(0.05)
+        self.handle.write(bytes((0x12, 0x04, 0x33))) # continuous reporting
+        time.sleep(0.05)
         while True:
             data = self.handle.read(18)
-            if data and data[0] == 0x37 and len(data) == 18:
-                print(data)
+            if data and data[0] == 0x33 and len(data) == 18:
                 t = time.monotonic()
                 buttons = getWord(data,1)
                 out = {"buttons": buttons & 0x1F9F}
@@ -171,13 +178,11 @@ class MyWiimote:
                     y = (data[offset+1]&0xFF) | ((data[offset+2]&0xC0)>>6) << 8
                     if y < 1023:
                         s = data[offset+2] & 0xF
-                        irData += ((x,y),s)
-                        print("have")
+                        irData.append(((x,y),s))
                     else:
-                        irData += (None,)
+                        irData.append(None)
                     offset += 3
                 out["ir"] = irData
-                print(out)
                 self.callback(out,t)
             time.sleep(EVENT_DT)
         
