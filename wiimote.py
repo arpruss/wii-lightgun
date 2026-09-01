@@ -68,25 +68,25 @@ if not WIIUSE:
                 value = 5
             ir_block1[:] = IR_LEVELS[value-1][0]
             ir_block2[:] = IR_LEVELS[value-1][1]
-            
-        def Wiimote_calibrate(self):
-            self.calibrationBuffer = ctypes.create_string_buffer(CALIBRATION_SIZE)
+                        
+        def calibrate(wm):
+            wm.calibrationBuffer = ctypes.create_string_buffer(CALIBRATION_SIZE)
             buffer = self.read(RW_EEPROM, CALIBRATION_OFFSET, CALIBRATION_SIZE)
-            self.irCalibration = None
-            self.accel0gCalibration = None
-            self.accel1gCalibration = None
+            wm.irCalibration = None
+            wm.accel0gCalibration = None
+            wm.accel1gCalibration = None
             if len(buffer) == CALIBRATION_SIZE:
                 irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_1:])
                 if not irc:
                     irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_2:])
                 if irc:
-                    self.irCalibration = irc
+                    wm.irCalibration = irc
                 acc = parseAccelCalibration(buffer[ACCEL_CALIBRATION_OFFSET:])
                 if acc:
-                    self.accel0gCalibration = acc[0]
-                    self.accel1gCalibration = acc[1]
-            print(self.irCalibration,self.accel0gCalibration,self.accel1gCalibration)
-            
+                    wm.accel0gCalibration = acc[0]
+                    wm.accel1gCalibration = acc[1]
+            print(wm.irCalibration,wm.accel0gCalibration,wm.accel1gCalibration)
+
         Wiimote.calibrate = Wiimote_calibrate
         set_ir_sensitivity = cwiid_set_ir_sensitivity
     except ModuleNotFoundError as e:
@@ -159,27 +159,6 @@ if WIIUSE:
             except:
                 self.address = "wiiuse_wiimote";
                 
-        def calibrate(self): # call before enable()
-            self.calibrationBuffer = ctypes.create_string_buffer(CALIBRATION_SIZE)
-            wiiuse.read_data(self.wm, self.calibrationBuffer, CALIBRATION_OFFSET, CALIBRATION_SIZE)
-            t = time.monotonic()
-            while time.monotonic() < t + 6:
-                if wiiuse.poll(self.wiimotes, 1):
-                    if self.wm.contents.event == wiiuse.READ_DATA and not self.irCalibration and not self.accel0gCalibration:
-                        irc = parseIRCalibration(self.calibrationBuffer[IR_CALIBRATION_OFFSET_1:])
-                        if not irc:
-                            irc = parseIRCalibration(self.calibrationBuffer[IR_CALIBRATION_OFFSET_2:])
-                        if irc:
-                            self.irCalibration = irc
-                        acc = parseAccelCalibration(self.calibrationBuffer[ACCEL_CALIBRATION_OFFSET:])
-                        if acc:
-                            self.accel0gCalibration = acc[0]
-                            self.accel1gCalibration = acc[1]
-                        if irc and acc:
-                            if self.address == "wiiuse_wiimote":
-                                self.address = hashlib.md5(self.calibrationBuffer.raw).hexdigest()
-                            break
-            
         @property
         def rpt_mode(self):
             return self._reportMode
@@ -248,4 +227,28 @@ if WIIUSE:
             self.listenThread = Thread(target = self.listenLoop)
             self.listenThread.start()
 
+    def calibrate(wm): # call before enable()
+        wm.irCalibration = None
+        wm.accel0gCalibration = None
+        wm.accel1gCalibration = None
+        wm.calibrationBuffer = ctypes.create_string_buffer(CALIBRATION_SIZE)
+        wiiuse.read_data(wm.wm, wm.calibrationBuffer, CALIBRATION_OFFSET, CALIBRATION_SIZE)
+        t = time.monotonic()
+        while time.monotonic() < t + 6:
+            if wiiuse.poll(wm.wiimotes, 1):
+                if wm.wm.contents.event == wiiuse.READ_DATA and not wm.irCalibration and not wm.accel0gCalibration:
+                    irc = parseIRCalibration(wm.calibrationBuffer[IR_CALIBRATION_OFFSET_1:])
+                    if not irc:
+                        irc = parseIRCalibration(wm.calibrationBuffer[IR_CALIBRATION_OFFSET_2:])
+                    if irc:
+                        wm.irCalibration = irc
+                    acc = parseAccelCalibration(wm.calibrationBuffer[ACCEL_CALIBRATION_OFFSET:])
+                    if acc:
+                        wm.accel0gCalibration = acc[0]
+                        wm.accel1gCalibration = acc[1]
+                    if irc and acc:
+                        if wm.address == "wiiuse_wiimote":
+                            wm.address = hashlib.md5(wm.calibrationBuffer.raw).hexdigest()
+                        break
+        
     

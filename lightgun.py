@@ -1193,7 +1193,7 @@ def connect(backgroundTimeout=0):
     while True:
         try:
             wm = wiimote.Wiimote()
-            wm.calibrate()
+            wiimote.calibrate(wm)
             print(getAddress(wm))
             wm.mesg_callback = wiimoteCallback
             wm.enable(wiimote.FLAG_MESG_IFC)
