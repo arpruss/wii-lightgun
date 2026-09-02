@@ -1203,7 +1203,7 @@ def connect(backgroundTimeout=0):
             CONNECTED_EVENT.set()
             lastMessage = time.time()+5
             return
-        except RuntimeError:
+        except (RuntimeError,OSError):
             if (backgroundTimeout and time.time() > t0 + backgroundTimeout) or abortConnect:
                 print("Giving up, connecting a fake wiimote")
                 wm = FakeWiimote()

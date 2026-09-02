@@ -1,10 +1,23 @@
-import hid
+import os
 import time
 from threading import Thread
+if os.name == 'nt':
+    USE_HID = True
+else:
+    USE_HID = False
+
+if USE_HID:
+    import hid
+else:
+    import wiimote_scan
+    import socket
 
 WIIUSE = False
 WIIMOTE_VID = 0x057e
 WIIMOTE_PIDS = [0x0306, 0x0330]
+
+PSM_CONTROL = 17
+PSM_INTERRUPT = 19
 
 RW_EEPROM = 0
 RW_REG = 0x04
@@ -74,28 +87,62 @@ def setCalibration(wm,buffer):
         
 def getWord(data, offset):
     return (data[offset] & 0xFF) << 8 | (data[offset+1] & 0xFF)
-
+    
 class MyWiimote:
-    def __init__(self):
+    def __init__(self, timeout=5):
+        self.timeout = timeout
+        if USE_HID:
+            self.initHID()
+        else:
+            self.initSocket()
+        self.led = 0x60
+        self.calibrate()
+        self.led = 0xF0-0x60
+        
+    def initSocket(self):
+        mac = wiimote_scan.scan_wiimote_dbus_poll(timeout=10)
+        if not mac:
+            raise RuntimeError()
+        self.address = mac
+        self.s_control = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
+        self.s_interrupt = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)        
+        self.s_control.connect((self.address, PSM_CONTROL))
+        self.s_interrupt.connect((self.address, PSM_INTERRUPT))
+
+    def initHID(self):
         target_path = None
-        while not target_path:
+        t = time.monotonic()
+        while not target_path and time.monotonic() < t + self.timeout:
             for dev in hid.enumerate():
                 if dev['vendor_id'] == WIIMOTE_VID and dev['product_id'] in WIIMOTE_PIDS:
                     target_path = dev['path']
                     print(f"Found Wiimote at: {target_path}")
                     break
-            time.sleep(0.5)
+            time.sleep(0.2)
+        if not target_path:
+            raise RuntimeError()
 
         # Open the hidraw device path
         self.handle = hid.device()
         self.handle.open_path(target_path)
         self.handle.set_nonblocking(True)
-        self.timeout = 5
         self.callback = lambda data,t: None
         
-        self.led = 0x60
-        self.calibrate()
-        self.led = 0xF0-0x60
+    def recv(self,size):
+        if USE_HID:
+            return self.handle.read(size)
+        else:
+            data = self.s_interrupt.recv(size)
+            if data:
+                return data[1:]
+            else:
+                return data
+            
+    def send(self,out):
+        if USE_HID:
+            self.handle.write(bytes(out))
+        else:
+            self.s_interrupt.send(bytes((0xA2,)) + bytes(out))
         
     @property
     def led(self):
@@ -103,7 +150,7 @@ class MyWiimote:
     
     @led.setter
     def led(self, l):
-        self.handle.write((0x11,l))
+        self.send((0x11,l))
         self._leds = l
         
     def read_sync(self,location,address,size):
@@ -111,11 +158,11 @@ class MyWiimote:
         if size == 0:
             return output
         read_cmd = bytes((0x17, location, (address&0xFF0000)>>16, (address&0xFF00)>>8, address&0xFF, (size&0xFF00)>>8, size&0xFF))
-        self.handle.write(read_cmd)
+        self.send(read_cmd)
         time.sleep(0.2)
         t = time.monotonic()
         while time.monotonic() <= t + self.timeout and size > 0:
-            data = self.handle.read(64)
+            data = self.recv(64)
             if data and data[0] == 0x21 and data[3] & 0xF == 0 and  len(data)>6 and getWord(data, 4) == address:
                 output += bytes(data[6:])
                 n = min(size, len(data)-6)
@@ -133,7 +180,7 @@ class MyWiimote:
             return
         paddedData = list(data) + (16-len(data)) * [0,]
         write_cmd = bytes([0x16, RW_REG, (address&0xFF0000)>>16, (address&0xFF00)>>8, address&0xFF, len(data)] + paddedData)
-        self.handle.write(write_cmd)
+        self.send(write_cmd)
             
     def enable(self,mode,irLevel=5): # mode is ignored
         self.listenThread = Thread(target = self.listening, args=(mode,irLevel,))
@@ -141,9 +188,9 @@ class MyWiimote:
     
     def listening(self,mode,irLevel):
         # enable camera in extended data mode
-        self.handle.write(bytes((0x13, 0x04)))
+        self.send(bytes((0x13, 0x04)))
         time.sleep(0.05)
-        self.handle.write(bytes((0x1A, 0x04)))
+        self.send(bytes((0x1A, 0x04)))
         time.sleep(0.05)
         self.write_reg(0xb00030,(0x01,)) 
         time.sleep(0.05)
@@ -156,10 +203,11 @@ class MyWiimote:
         time.sleep(0.05)
         self.write_reg(0xb00030,(0x08,))
         time.sleep(0.05)
-        self.handle.write(bytes((0x12, 0x04, 0x33))) # continuous reporting
+        self.send(bytes((0x12, 0x04, 0x33))) # continuous reporting
         time.sleep(0.05)
+        print("waiting")
         while True:
-            data = self.handle.read(18)
+            data = self.recv(19)
             if data and data[0] == 0x33 and len(data) == 18:
                 t = time.monotonic()
                 buttons = getWord(data,1)
@@ -197,6 +245,8 @@ if __name__=='__main__':
     print(w.irCalibration)
     print(w.accel0gCalibration)
     print(w.accel1gCalibration)
+    w.callback = lambda data,t: print(data)
+    print("enabling")
     w.enable(0)
     while True:
         time.sleep(1)
