@@ -4,7 +4,7 @@ from threading import Thread
 if os.name == 'nt':
     USE_HID = True
 else:
-    USE_HID = False
+    USE_HID = False # change to True to always use hidapi
 
 if USE_HID:
     import hid
@@ -22,11 +22,31 @@ PSM_INTERRUPT = 19
 RW_EEPROM = 0
 RW_REG = 0x04
 
-
 EVENT_DT = .01
 
-set_ir_sensitivity = None
-NEVER_CONTINUOUS = True
+NUNCHUK_BTN_Z = 0x01
+NUNCHUK_BTN_C = 0x02
+BTN_B = 0x04
+BTN_A = 0x08
+BTN_1 = 0x02
+BTN_2 = 0x01
+BTN_PLUS = 0x1000
+BTN_MINUS = 0x0010
+BTN_HOME = 0x0080
+BTN_LEFT = 0x0100
+BTN_RIGHT = 0x0200
+BTN_DOWN = 0x0400
+BTN_UP = 0x0800
+LED1_ON = 0x10
+LED2_ON = 0x20
+LED3_ON = 0x40
+LED4_ON = 0x80
+RPT_IR =  1
+RPT_BTN = 2
+RPT_ACC = 4
+RPT_EXT = 8
+FLAG_MESG_IFC = 0
+
 IR_CALIBRATION_LOCATIONS = ( ((0,2,4),(1,2,6)),  # X1,Y1
                              ((3,2,0),(4,2,2)),  # X2,Y2
                              ((5,7,4),(6,7,6)),  # X3,Y3
@@ -58,7 +78,10 @@ def parseIRCalibration(data):
     def getCoordinate(bits07_offset,bits89_offset,bits89_shift):
         return (data[bits07_offset] & 0xFF) | (((data[bits89_offset] >> bits89_shift) & 0x3) << 8)    
     
-    return tuple( (getCoordinate(*icl[0]), getCoordinate(*icl[1])) for icl in IR_CALIBRATION_LOCATIONS)
+    irc = [ (getCoordinate(*icl[0]), getCoordinate(*icl[1])) for icl in IR_CALIBRATION_LOCATIONS ]
+    irc.sort()
+
+    return irc
  
 def parseAccelCalibration(data):
     if len(data) < 10:
@@ -74,23 +97,15 @@ def parseAccelCalibration(data):
     
     return accel0g, accel1g
 
-def setCalibration(wm,buffer):
-    irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_1:])
-    if not irc:
-        irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_2:])
-    if irc:
-        wm.irCalibration = irc
-    acc = parseAccelCalibration(buffer[ACCEL_CALIBRATION_OFFSET:])
-    if acc:
-        wm.accel0gCalibration = acc[0]
-        wm.accel1gCalibration = acc[1]
-        
 def getWord(data, offset):
     return (data[offset] & 0xFF) << 8 | (data[offset+1] & 0xFF)
     
-class MyWiimote:
-    def __init__(self, timeout=5):
+class Wiimote:
+    def __init__(self, timeout=5, connectTimeout=15):
         self.timeout = timeout
+        self.connectTimeout = connectTimeout
+        self.address = None
+        self.calibrationRaw = None
         if USE_HID:
             self.initHID()
         else:
@@ -98,16 +113,51 @@ class MyWiimote:
         self.led = 0x60
         self.calibrate()
         self.led = 0xF0-0x60
+        if self.address is None:
+            if not self.calibrationRaw:
+                self.address = self.calibrationRaw.hex()
+            else:
+                self.address = "wiimote"
         
     def initSocket(self):
-        mac = wiimote_scan.scan_wiimote_dbus_poll(timeout=10)
+        mac = wiimote_scan.scan_wiimote_dbus_poll(timeout=self.connectTimeout)
         if not mac:
             raise RuntimeError()
         self.address = mac
         self.s_control = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
         self.s_interrupt = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)        
+        self.s_control.settimeout(self.connectTimeout)
         self.s_control.connect((self.address, PSM_CONTROL))
+        self.s_interrupt.settimeout(self.connectTimeout)
         self.s_interrupt.connect((self.address, PSM_INTERRUPT))
+        self.s_control.settimeout(self.timeout)
+        self.s_interrupt.settimeout(self.timeout)
+        
+    def close(self):
+        if self.listening:
+            try:
+                self.send(bytes((0x13, 0x00)))
+                time.sleep(0.05)
+                self.send(bytes((0x1A, 0x00)))
+                time.sleep(0.05)
+            except:
+                pass
+            self.listening = False
+            
+        if USE_HID:
+            try:
+                self.handle.close()
+            except:
+                pass
+        else:
+            try:
+                self.s_control.close()
+            except:
+                pass
+            try:
+                self.s_interrupt.close()
+            except:
+                pass
 
     def initHID(self):
         target_path = None
@@ -132,11 +182,11 @@ class MyWiimote:
         if USE_HID:
             return self.handle.read(size)
         else:
-            data = self.s_interrupt.recv(size)
-            if data:
+            data = self.s_interrupt.recv(size+1)
+            if data and data[0] & 0xFF == 0xA1:
                 return data[1:]
             else:
-                return data
+                return None
             
     def send(self,out):
         if USE_HID:
@@ -182,7 +232,8 @@ class MyWiimote:
         write_cmd = bytes([0x16, RW_REG, (address&0xFF0000)>>16, (address&0xFF00)>>8, address&0xFF, len(data)] + paddedData)
         self.send(write_cmd)
             
-    def enable(self,mode,irLevel=5): # mode is ignored
+    def enable(self,mode=0,irLevel=5): # mode is ignored
+        self.listening = True
         self.listenThread = Thread(target = self.listening, args=(mode,irLevel,))
         self.listenThread.start()
     
@@ -205,9 +256,8 @@ class MyWiimote:
         time.sleep(0.05)
         self.send(bytes((0x12, 0x04, 0x33))) # continuous reporting
         time.sleep(0.05)
-        print("waiting")
-        while True:
-            data = self.recv(19)
+        while self.listening:
+            data = self.recv(18)
             if data and data[0] == 0x33 and len(data) == 18:
                 t = time.monotonic()
                 buttons = getWord(data,1)
@@ -234,20 +284,31 @@ class MyWiimote:
                 self.callback(out,t)
             time.sleep(EVENT_DT)
         
+            
     def calibrate(self):
         data = self.read_sync(RW_EEPROM, CALIBRATION_OFFSET, CALIBRATION_SIZE)
-        if data:
-            setCalibration(self, data)
+        
+        if data and len(data) == CALIBRATION_SIZE:
+            self.calibrationRaw = bytes(data[:IR_CALIBRATION_SIZE-1] + data[IR_CALIBRATION_SIZE*2:-1])
+            irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_1:])
+            if not irc:
+                irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_2:])
+            if irc:
+                self.irCalibration = irc
+            acc = parseAccelCalibration(buffer[ACCEL_CALIBRATION_OFFSET:])
+            if acc:
+                self.accel0gCalibration = acc[0]
+                self.accel1gCalibration = acc[1]
     
 
 if __name__=='__main__':
-    w = MyWiimote()
+    w = Wiimote()
     print(w.irCalibration)
     print(w.accel0gCalibration)
     print(w.accel1gCalibration)
     w.callback = lambda data,t: print(data)
     print("enabling")
-    w.enable(0)
+    w.enable()
     while True:
         time.sleep(1)
         pass
