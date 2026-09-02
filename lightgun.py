@@ -1,5 +1,9 @@
 #!/usr/bin/python3
-import wiimote
+USE_HIDAPI_OR_SOCKET = False
+    import wiimote_hidapi as wiimote
+    wiimote.MyWiimote = wiimote.Wiimote
+else:
+    import wiimote
 import myinput
 import time
 import math
@@ -345,7 +349,7 @@ def wiimoteWait(timeout=None):
         return
 
     WIIMOTE_EVENT.wait(timeout if timeout is not None and timeout < DISCONNECT_DETECT_TIME else DISCONNECT_DETECT_TIME)
-    if time.time() > lastMessage + DISCONNECT_DETECT_TIME:
+    if time.monotonic() > lastMessage + DISCONNECT_DETECT_TIME:
         print("Disconnect detected")
         connect()
         CONNECTED_EVENT.wait()
@@ -354,9 +358,9 @@ def wiimoteWait(timeout=None):
         print("Reconnected")
     WIIMOTE_EVENT.clear()
     
-def wiimoteCallback(list,t):
+def wiimoteCallback(events,t):
     global lastMessage
-    lastMessage = time.time()
+    lastMessage = time.monotonic()
     WIIMOTE_EVENT.set()
 
 # was 1280
@@ -439,45 +443,66 @@ def showPoints(ir,irQuad):
     for point in ir:
         if point is not None:
             xy = getPoint(point)
-            size = point.get('size',1)
+            size = getSize(point)
             x = int(cx + xy[0] * height)
             y = int(cy + (-xy[1]) * height)
             pygame.draw.rect(surface, WHITE, (x-size*PXSCALE/2, y-size*PXSCALE/2, size*PXSCALE, size*PXSCALE))
     
 def getPoint(p):
-    return (p['pos'][0]-CENTER_X) / 768., (p['pos'][1]-CENTER_Y) / 768.
+    try:
+        return (p[0][0]-CENTER_X) / 768., (p[0][1]-CENTER_Y) / 768.
+    except:
+        return (p['pos'][0]-CENTER_X) / 768., (p['pos'][1]-CENTER_Y) / 768.
     
-def updateAcceleration(accel):
+def getSize(p):
+    try:
+        return p[1]
+    except:
+        return p.get('size',1)
+    
+def updateAcceleration(state):
     global lastAngle,lastAccel,lastAccelTime
     
-    ca = None   
-    if hasattr(wm, 'accel0gCalibration'):
-        ca = wm.accel0gCalibration
-    if ca == None:
-        ca = [512,512,512]
-    
-    a = (accel[0]-ca[0],accel[1]-ca[1],accel[2]-ca[2])
-    
-    ga = None
-    if hasattr(wm, 'accel1gCalibration'):
-        ga = wm.accel1gCalibration
-    if ga == None:
-        ga = [100,100,100]
+    if "acc_calib" in state:
+        a = state["acc_calib"]
+    else:    
+        accel = state["acc"]
+        ca = None   
+        if hasattr(wm, 'accel0gCalibration'):
+            ca = wm.accel0gCalibration
+        if ca == None:
+            ca = [512,512,512]
         
-    a = [a[0]/ga[0],a[1]/ga[1],a[2]/ga[2]]
+        a = (accel[0]-ca[0],accel[1]-ca[1],accel[2]-ca[2])
+        
+        ga = None
+        if hasattr(wm, 'accel1gCalibration'):
+            ga = wm.accel1gCalibration
+        if ga == None:
+            ga = [100,100,100]
+            
+        a = [a[0]/ga[0],a[1]/ga[1],a[2]/ga[2]]
     
+    mag = math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2])
+        
     t = time.monotonic()
-    if lastAccelTime >= 0:
-        dt = min(max(t-lastAccelTime,.01),.1)
-        alpha = math.exp(-2.0 * math.pi * ACCEL_CUTOFF_FREQ * dt)
-        for i in range(3):
-            a[i] = alpha * lastAccel[i] + (1-alpha) * a[i]
+    
+    if .8 <= mag <= 1.2:
+        if lastAccelTime >= 0:
+            dt = min(max(t-lastAccelTime,.01),.1)
+            alpha = math.exp(-2.0 * math.pi * ACCEL_CUTOFF_FREQ * dt)
+            for i in range(3):
+                a[i] = alpha * lastAccel[i] + (1-alpha) * a[i]
 
-    lastAccelTime = t
-    lastAccel = a
+        lastAccel = a
+        lastAccelTime = t
+    else:
+        lastAccelTime = t
+        if lastAccelTime < 0:
+            lastAccel = a
 
     try:
-        lastAngle = math.atan2(a[2],a[0])
+        lastAngle = math.atan2(lastAccel[2],lastAccel[0])
     except:
         pass
 
@@ -725,7 +750,7 @@ def screenshot():
     size = getDisplaySize()
     img = pygame.Surface(size)
     img.blit(surface,(0,0),((0,0),size))
-    pygame.image.save(img,SCREENSHOT_FILE+str(time.time())+".png")
+    pygame.image.save(img,SCREENSHOT_FILE+str(time.monotonic())+".png")
     
 def checkQuitAndKeys():
     global running
@@ -780,7 +805,7 @@ def measure(flexible=False,screenWidth=1.):
     buttonMap = ((wiimote.BTN_LEFT,(-1,0)),(wiimote.BTN_RIGHT,(1,0)),(wiimote.BTN_UP,(0,1)),(wiimote.BTN_DOWN,(0,-1)))
 
     prevButtons = 0
-    prevTime = time.time()
+    prevTime = time.monotonic()
     CONNECTED_EVENT.wait()
     if crash:
         sys.exit(0)
@@ -796,8 +821,8 @@ def measure(flexible=False,screenWidth=1.):
         time.sleep(0.005)
         checkQuitAndKeys()
         surface.fill(DARK_GREEN)
-        updateAcceleration(getRawAccel(wm.state))
-        ir = wm.state['ir_src']
+        updateAcceleration(wm.state)
+        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
         irQuad = getIRQuad(ir)
         
         showPoints(ir,irQuad)
@@ -821,11 +846,11 @@ def measure(flexible=False,screenWidth=1.):
 
         for wii,dir in buttonMap:
             if pressed & wii:
-                nextRepeat = time.time()+REPEAT_DELAY
+                nextRepeat = time.monotonic()+REPEAT_DELAY
                 move = dir
                 break
-            elif buttons & wii and time.time()>=nextRepeat:
-                nextRepeat = time.time()+REPEAT_TIME
+            elif buttons & wii and time.monotonic()>=nextRepeat:
+                nextRepeat = time.monotonic()+REPEAT_TIME
                 move = dir
                 break
 
@@ -948,20 +973,20 @@ def calibrate(flexible=False):
     if not CONFIG.haveCenter(wm):
         center()
 
-    lastCalibrated = time.time()
+    lastCalibrated = time.monotonic()
 
     while running:
         wiimoteWait(0.25)
-        ir = wm.state['ir_src']
+        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
         buttons = getButtons(wm.state)
         newButtons = buttons & ~prevButtons
         prevButtons = buttons
         checkQuitAndKeys()
         surface.fill(BLACK)
-        updateAcceleration(getRawAccel(wm.state))
+        updateAcceleration(wm.state)
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
-        debounced = 0.5 + lastCalibrated < time.time()
+        debounced = 0.5 + lastCalibrated < time.monotonic()
         valid = irQuad and debounced
         drawCross(CALIBRATION_CORNERS[corner],color=RED if valid else GRAY)
         if debounced:
@@ -974,7 +999,7 @@ def calibrate(flexible=False):
             if len(calibrationData[corner]):
                 del calibrationData[corner][-1]
         elif newButtons & (wiimote.BTN_B | NUNCHUK_C) and valid:
-            lastCalibrated = time.time()
+            lastCalibrated = time.monotonic()
             z = irQuad.toUnitSquare((0.5,0.5))
             calibrationData[corner].append(z)
             corner = (corner + 1) % len(CALIBRATION_CORNERS)
@@ -1014,7 +1039,7 @@ def center():
 
     while running:
         keys = checkQuitAndKeys()
-        updateAcceleration(getRawAccel(wm.state))
+        updateAcceleration(wm.state)
         surface.fill(BLACK)
         wiimoteWait(0.25)
         if quads[0] is None:
@@ -1027,7 +1052,7 @@ def center():
             index = 1
         else:
             break
-        ir = wm.state['ir_src']
+        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
         #print(lastAngle, (1-index*2)*math.pi/2)
@@ -1069,9 +1094,9 @@ def demo():
         surface.fill(BLACK)
         drawText("Press HOME to exit")
         buttons = getButtons(wm.state)
-        ir = wm.state['ir_src']
+        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
         checkQuitAndKeys()
-        updateAcceleration(getRawAccel(wm.state))
+        updateAcceleration(wm.state)
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
         if irQuad:
@@ -1120,7 +1145,7 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                 while running:
                     wiimoteWait()
                     buttons = getButtons(wm.state)
-                    updateAcceleration(getRawAccel(wm.state))
+                    updateAcceleration(wm.state)
                     pressed = buttons &~ prevButtons
                     released = ~buttons & prevButtons
                     prevButtons = buttons
@@ -1144,11 +1169,11 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                                 press(dev, u)
                                 if rumble:
                                     wm.rumble = True
-                                    rumbleStarted = time.time()
+                                    rumbleStarted = time.monotonic()
                             elif released & wii:
                                 release(dev, u)
 
-                    if rumble and rumbleStarted and rumbleStarted + RUMBLE_TIME <= time.time():
+                    if rumble and rumbleStarted and rumbleStarted + RUMBLE_TIME <= time.monotonic():
                         wm.rumble = False
                                 
                     if 'nunchuk' in wm.state:
@@ -1168,7 +1193,7 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                         prevNunchukX, prevNunchukY = x,y
 
                     if not horizontal:
-                        ir = wm.state['ir_src']
+                        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
                         irQuad = getIRQuad(ir)
                         if irQuad:
                             xy = CONFIG.pointerPosition(irQuad)
@@ -1187,7 +1212,7 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
 def connect(backgroundTimeout=0):
     global wm, lastMessage, CENTER_X, CENTER_Y, crash
     wm = None
-    t0 = time.time()
+    t0 = time.monotonic()
     CONNECTED_EVENT.clear()
     crash = False
     while True:
@@ -1201,10 +1226,10 @@ def connect(backgroundTimeout=0):
             CENTER_X,CENTER_Y = CONFIG.getCenter(wm)
             # give it a bit of extra time for messages to start flowing
             CONNECTED_EVENT.set()
-            lastMessage = time.time()+5
+            lastMessage = time.monotonic()+5
             return
         except (RuntimeError,OSError):
-            if (backgroundTimeout and time.time() > t0 + backgroundTimeout) or abortConnect:
+            if (backgroundTimeout and time.monotonic() > t0 + backgroundTimeout) or abortConnect:
                 print("Giving up, connecting a fake wiimote")
                 wm = FakeWiimote()
                 CONNECTED_EVENT.set()
