@@ -1,18 +1,19 @@
-You can use this with either the cwiid or wiiuse library and their python wrappings.
-cwiid is only for Linux.
+Instructions:
+https://www.instructables.com/Accurate-Wiimote-Light-Gun-on-Raspberry-PI/
 
-If you have both installed, edit wiimote.py to set WIIUSE = True or WIIUSE = False,
-depending on whether you want to use wiiuse.
+On Windows, you need either the wiiuse library (with python wrappings)
+or the hidapi library.
 
-CWIID notes:
-    On Linux if you want to use CWIID, you should use this fixed fork: https://github.com/arpruss/cwiid-1
+On Linux, it should work with pydbus (need to install) and sockets. But you can also
+use it with cwiid (this is the best tested approach) or wiiuse.
+
+You can edit the top of the lightgun.py and wiimote.py scripts to select which
+library to use this with.
 
 WIIUSE notes:
     Install my python fork of the wiiuse wrapper: https://github.com/arpruss/pywiiuse
     You also need to install the .so or .dll library. There are some notes with my
     wrapper.
-    
-With Windows Wiiuse, you can only calibrate a single wiimote.
 
-Calibration instructions are here: https://www.instructables.com/Accurate-Wiimote-Light-Gun-on-Raspberry-PI/
-
+CWIID notes:
+    See the cwiid-notes.txt file.

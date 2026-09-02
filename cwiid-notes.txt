@@ -1,0 +1,25 @@
+If you want to use cwiid on Raspberry PI, these notes are for you.
+
+Step B: cwiid
+
+Next, you'll need my modified cwiid package. Here it gets a bit hairy as ideally you'd need to build it on your Raspberry PI, but I have to confess that I've lost track of what packages you need to install to make it work. There are three options for doing this.
+
+Option B1: Build yourself
+
+cd ~
+git clone https://github.com/arpruss/cwiid-1
+autoconf
+./configure
+make -C libcwiid
+sudo make -C libcwiid install
+make -C python
+sudo make -C python install
+Unfortunately, there is a pretty good chance you're missing a bunch of stuff needed for building this, and ./configure will complain. You can look at all the things it complains about and run sudo apt install on all of them.
+
+Option B2: Use my binaries
+
+cd ~
+wget https://github.com/arpruss/cwiid-1/releases/download/0.0.1/cwiid-rpi.tar.gz
+tar zxvf cwiid-rpi.tar.gz
+cd cwiid
+sudo make install
