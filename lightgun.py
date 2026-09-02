@@ -1,5 +1,6 @@
 #!/usr/bin/python3
-USE_HIDAPI_OR_SOCKET = False
+USE_HIDAPI_OR_SOCKET = True
+if USE_HIDAPI_OR_SOCKET:
     import wiimote_hidapi as wiimote
     wiimote.MyWiimote = wiimote.Wiimote
 else:
