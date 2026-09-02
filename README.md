@@ -16,3 +16,4 @@ With Windows Wiiuse, you can only calibrate a single wiimote.
 
 Calibration instructions are here: https://www.instructables.com/Accurate-Wiimote-Light-Gun-on-Raspberry-PI/
 
+windows/WiiPair.exe is from https://github.com/jordanbtucker/WiiPair/

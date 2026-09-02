@@ -4,6 +4,7 @@ import time
 from threading import Thread
 if os.name == 'nt':
     USE_HID = True
+    import subprocess
 else:
     USE_HID = False # change to True to always use hidapi
 
@@ -101,15 +102,26 @@ def parseAccelCalibration(data):
 def getWord(data, offset):
     return (data[offset] & 0xFF) << 8 | (data[offset+1] & 0xFF)
     
+def WiiPair(connectTimeout=15):
+    print("Running WiiPair")
+    try:
+        subprocess.run([os.sep.join([os.path.dirname(os.path.realpath(__file__)),"windows","WiiPair.exe"])], capture_output=False, timeout=connectTimeout)
+    except subprocess.TimeoutExpired:
+        print("Failed")
+        return False
+    return True
+    print("Ran")
+    
 class Wiimote:
     def __init__(self, timeout=5, connectTimeout=15):
         self.timeout = timeout
         self.connectTimeout = connectTimeout
         self.address = None
         self.state = { 'buttons': 0, 'acc_raw': [512,512,612], 'acc_calib': [0.,0.,1.], 'ir': [None,None,None,None] }
+        self.mesg_callback = lambda data,t: None
         
         if USE_HID:
-            self.initHID()
+            self.initHID(connectTimeout=connectTimeout+5)
         else:
             self.initSocket()
         self.led = 0x60
@@ -159,25 +171,45 @@ class Wiimote:
                 self.s_interrupt.close()
             except:
                 pass
+                
+    def openWiimote(self):
+        for dev in hid.enumerate():
+            if dev['vendor_id'] == WIIMOTE_VID and dev['product_id'] in WIIMOTE_PIDS:
+                handle = hid.device()
+                try:
+                    handle.open_path(dev['path'])
+                except:
+                    continue
+                try:
+                    handle.set_nonblocking(False)
+                    # status request 
+                    if handle.write(bytes([0x15,0x00])) < 2:
+                        raise IOError()
+                    data = handle.read(32, timeout_ms=500)
+                    if not data:
+                        raise IOError()
+                    print(f"Found Wiimote at: {dev['path']}")
+                    return handle
+                except:
+                    handle.close()
+                    continue
+        return None
 
-    def initHID(self):
-        target_path = None
-        t = time.monotonic()
-        while not target_path and time.monotonic() < t + self.timeout:
-            for dev in hid.enumerate():
-                if dev['vendor_id'] == WIIMOTE_VID and dev['product_id'] in WIIMOTE_PIDS:
-                    target_path = dev['path']
-                    print(f"Found Wiimote at: {target_path}")
-                    break
-            time.sleep(0.2)
-        if not target_path:
-            raise RuntimeError()
+    def initHID(self,connectTimeout=15):
+        self.handle = self.openWiimote()
+        if not self.handle:
+            if os.name == "nt":
+                WiiPair(connectTimeout=connectTimeout)
+            t = time.monotonic()
+            while not self.handle and time.monotonic() < t + self.timeout:
+                self.handle = self.openWiimote()
+                if not self.handle:
+                    time.sleep(0.1)
+            if not self.handle:
+                print("Failed to connect")
+                raise RuntimeError()
 
-        # Open the hidraw device path
-        self.handle = hid.device()
-        self.handle.open_path(target_path)
         self.handle.set_nonblocking(False)
-        self.mesg_callback = lambda data,t: None
         
     def recv(self,size):
         if USE_HID:
