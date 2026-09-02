@@ -1,17 +1,24 @@
+ALWAYS_HIDAPI = False
+WINDOWS_USE_WiiPair_exe = False
+
 import os
 import hashlib
 import time
 from threading import Thread
+
 if os.name == 'nt':
     USE_HID = True
-    import subprocess
+    if WINDOWS_USE_WiiPair_exe:
+        import subprocess
+    else:
+        import windows.wiipair as wiipair
 else:
-    USE_HID = False # change to True to always use hidapi
+    USE_HID = ALWAYS_HIDAPI 
 
 if USE_HID:
     import hid
 else:
-    import wiimote_scan
+    import linux.wiimote_scan as wiimote_scan
     import socket
 
 WIIUSE = False
@@ -103,14 +110,16 @@ def getWord(data, offset):
     return (data[offset] & 0xFF) << 8 | (data[offset+1] & 0xFF)
     
 def WiiPair(connectTimeout=15):
-    print("Running WiiPair")
-    try:
-        subprocess.run([os.sep.join([os.path.dirname(os.path.realpath(__file__)),"windows","WiiPair.exe"])], capture_output=False, timeout=connectTimeout)
-    except subprocess.TimeoutExpired:
-        print("Failed")
-        return False
-    return True
-    print("Ran")
+    if WINDOWS_USE_WiiPair_exe:
+        print("Running WiiPair")
+        try:
+            subprocess.run([os.sep.join([os.path.dirname(os.path.realpath(__file__)),"windows","WiiPair.exe"])], capture_output=False, timeout=connectTimeout)
+        except subprocess.TimeoutExpired:
+            print("Failed")
+            return False
+        return True
+    else:
+        return wiipair.pair_wiimote(timeout=connectTimeout)
     
 class Wiimote:
     def __init__(self, timeout=5, connectTimeout=15):
