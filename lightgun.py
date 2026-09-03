@@ -1221,8 +1221,8 @@ def connect(backgroundTimeout=0):
             wm = wiimote.MyWiimote()
             print(getAddress(wm))
             wm.mesg_callback = wiimoteCallback
-            wm.enable(wiimote.FLAG_MESG_IFC)
             wm.rpt_mode = wiimote.RPT_IR | wiimote.RPT_BTN | wiimote.RPT_ACC | wiimote.RPT_EXT
+            wm.enable(wiimote.FLAG_MESG_IFC)
             wm.led = wiimote.LED1_ON | wiimote.LED4_ON
             CENTER_X,CENTER_Y = CONFIG.getCenter(wm)
             # give it a bit of extra time for messages to start flowing

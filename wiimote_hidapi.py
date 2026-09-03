@@ -55,6 +55,8 @@ RPT_BTN = 2
 RPT_ACC = 4
 RPT_EXT = 8
 FLAG_MESG_IFC = 0
+EXT_NONE = 0
+EXT_NUNCHUK = 1
 
 IR_CALIBRATION_LOCATIONS = ( ((0,2,4),(1,2,6)),  # X1,Y1
                              ((3,2,0),(4,2,2)),  # X2,Y2
@@ -127,6 +129,7 @@ class Wiimote:
         self.connectTimeout = connectTimeout
         self.address = None
         self.state = { 'buttons': 0, 'acc_raw': [512,512,612], 'acc_calib': [0.,0.,1.], 'ir': [None,None,None,None] }
+        self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC#|RPT_EXT
         self.mesg_callback = lambda data,t: None
         
         if USE_HID:
@@ -255,11 +258,16 @@ class Wiimote:
         t = time.monotonic()
         while time.monotonic() <= t + self.timeout and size > 0:
             data = self.recv(64)
-            if data and data[0] == 0x21 and data[3] & 0xF == 0 and  len(data)>6 and getWord(data, 4) == address:
-                output += bytes(data[6:])
-                n = min(size, len(data)-6)
-                address += n
-                size -= n
+            if data and data[0] == 0x21 and len(data)>6:
+                if data[3] & 0xF == 0 and getWord(data, 4) == address & 0xFFFF:
+                    n = min(size, len(data)-6)
+                    output += bytes(data[6:6+n])
+                    address += n
+                    size -= n
+                else:
+                    return None
+            elif data and data[0] == 0x22 and data[3] == 0x17 and data[4] != 0:
+                return None
             else:
                 time.sleep(0.01)
         if size == 0:
@@ -276,31 +284,75 @@ class Wiimote:
             
     def enable(self,mode=0,irLevel=5): # mode is ignored
         self.listening = True
-        self.listenThread = Thread(target = self.listen, args=(mode,irLevel))
+        self.listenThread = Thread(target = self.listen, args=(irLevel,))
         self.listenThread.start()
+        
+    def enableExt(self):
+        self.write_reg(0xA400F0,(0x55,))
+        time.sleep(0.05)
+        self.write_reg(0xA400FB,(0x00,))
+        time.sleep(0.2)
+        for i in range(3):
+            d = self.read_sync(RW_REG, 0xa400fe, 2)
+            if d is not None:
+                if len(d) >= 2 and getWord(d,0) == 0x0000:
+                    return EXT_NUNCHUK
+                else:
+                    return EXT_NONE
+            time.sleep(0.1)
+        return EXT_NONE
     
-    def listen(self,mode,irLevel):
+    def listen(self,irLevel):
+
         # enable camera in extended data mode
-        self.send(bytes((0x13, 0x04)))
+        if not (self.rpt_mode & RPT_EXT):
+            reportMode = 0x33
+            reportSize = 18
+            irMode = 3 # extended
+        else:
+            reportMode = 0x37
+            reportSize = 22
+            irMode = 1 # basic
+        if self.rpt_mode & RPT_EXT:
+            extType = self.enableExt()
+        else:
+            extType = EXT_NONE
+            
+        if self.rpt_mode & RPT_IR:
+            self.send(bytes((0x13, 0x04)))
+            time.sleep(0.05)
+            self.send(bytes((0x1A, 0x04)))
+            time.sleep(0.05)
+            self.write_reg(0xb00030,(0x01,)) 
+            time.sleep(0.05)
+            lev = IR_LEVELS[max(min(irLevel,5),1)-1]
+            self.write_reg(0xb00000,lev[0])
+            time.sleep(0.05)
+            self.write_reg(0xb0001a,lev[1])
+            time.sleep(0.05)
+            self.write_reg(0xb00033,(irMode,)) 
+            time.sleep(0.05)
+            self.write_reg(0xb00030,(0x08,))
+            time.sleep(0.05)
+        else:
+            self.send(bytes((0x13, 0x00)))
+            time.sleep(0.05)
+            self.send(bytes((0x1A, 0x00)))
+            time.sleep(0.05)
+        self.send(bytes((0x12, 0x04, reportMode))) # continuous reporting; TODO: noncontinuous when only buttons of interest
         time.sleep(0.05)
-        self.send(bytes((0x1A, 0x04)))
-        time.sleep(0.05)
-        self.write_reg(0xb00030,(0x01,)) 
-        time.sleep(0.05)
-        lev = IR_LEVELS[max(min(irLevel,5),1)-1]
-        self.write_reg(0xb00000,lev[0])
-        time.sleep(0.05)
-        self.write_reg(0xb0001a,lev[1])
-        time.sleep(0.05)
-        self.write_reg(0xb00033,(2,)) # extended
-        time.sleep(0.05)
-        self.write_reg(0xb00030,(0x08,))
-        time.sleep(0.05)
-        self.send(bytes((0x12, 0x04, 0x33))) # continuous reporting
-        time.sleep(0.05)
+
         while self.listening:
-            data = self.recv(18)
-            if data and data[0] == 0x33 and len(data) == 18:
+            data = self.recv(reportSize)
+            if not data:
+                continue
+            if data[0] == 0x20 and len(data) >= 7:
+                if (self.rpt_mode & RPT_EXT) and data[3] & 0x02:
+                    extType = self.enableExt()
+                else:
+                    extType = EXT_NONE
+                self.send(bytes((0x12, 0x04, reportMode)))
+            if (data[0] == 0x33 and len(data) >= 18) or (data[0] == 0x37 and len(data) >= 22):
                 t = time.monotonic()
                 buttons = getWord(data,1)
                 out = {"buttons": buttons & 0x1F9F}
@@ -313,19 +365,47 @@ class Wiimote:
                                (z-self.accel0gCalibration[2])/self.accel1gCalibration[2] )
                 offset = 6
                 irData = []
-                for i in range(4):
-                    x = (data[offset]&0xFF) | ((data[offset+2]&0x30)>>4) << 8
-                    y = (data[offset+1]&0xFF) | ((data[offset+2]&0xC0)>>6) << 8
-                    if y < 1023:
-                        s = data[offset+2] & 0xF
-                        irData.append(((x,y),s))
-                    else:
-                        irData.append(None)
-                    offset += 3
-                out["ir"] = irData
+                if data[0] == 0x33:
+                    for i in range(4):
+                        y = (data[offset+1]&0xFF) | ((data[offset+2]&0xC0)>>6) << 8
+                        if y < 1023:
+                            x = (data[offset]&0xFF) | ((data[offset+2]&0x30)>>4) << 8
+                            s = data[offset+2] & 0xF
+                            irData.append(((x,y),s))
+                        else:
+                            irData.append(None)
+                        offset += 3
+                    out["ir"] = irData
+                elif data[0] == 0x37:
+                    for i in range(2):
+                        y = (data[offset+1]&0xFF) | ((data[offset+2]&0xC0)>>6) << 8
+                        if y < 1023:
+                            x = (data[offset]&0xFF) | ((data[offset+2]&0x30)>>4) << 8
+                            irData.append(((x,y),1))
+                        else:
+                            irData.append(None)
+                        y = (data[offset+4]&0xFF) | ((data[offset+2]&0xC)>>2) << 8
+                        if y < 1023:
+                            x = (data[offset+3]&0xFF) | (data[offset+2]&0x3) << 8
+                            irData.append(((x,y),1))
+                        else:
+                            irData.append(None)
+                        offset += 5
+                    out["ir"] = irData
+                    if extType == EXT_NUNCHUK:
+                        nunchuk = {}
+                        nunchuk["buttons"] = ~data[offset+5] & 0x3                       
+                        if any(x & 0xFF != 0xFF for x in data[offset:]):
+                            x = (0xFF & data[offset+2]) << 2 | (3&(data[offset+5] >> 2))
+                            y = (0xFF & data[offset+3]) << 2 | (3&(data[offset+5] >> 4))
+                            z = (0xFF & data[offset+4]) << 2 | (3&(data[offset+5] >> 6))
+                            nunchuk["acc_raw"] = (x,y,z)
+                            nunchuk["joy"] = (data[offset]&0xFF,data[offset]&0xFF)
+                            out["nunchuk"] = nunchuk
+
                 self.state = out
                 self.mesg_callback(out,t)        
-            
+             
     def calibrate(self):
         data = self.read_sync(RW_EEPROM, CALIBRATION_OFFSET, CALIBRATION_SIZE)
         
@@ -353,7 +433,8 @@ if __name__=='__main__':
     print(w.accel1gCalibration)
     w.mesg_callback = lambda data,t: print(data)
     print("enabling")
-    w.enable()
+    w.rpt_mode=RPT_IR|RPT_EXT
+    w.enable(mode=RPT_IR|RPT_EXT)
     while True:
         time.sleep(1)
         pass
