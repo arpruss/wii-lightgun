@@ -24,6 +24,7 @@ USE_P3P = False # fallback to P3P if only three points are visible; otherwise fa
 P3P_PROXIMITY_PREFERENCE = False # choose the solution closest to the last solution; otherwise, use acceleration data to choose the best solution
 USE_P2PA = False # fallback to P2PA if only bottom markers or only top markers are visible; ensure markers are equal height
 # P2PA is the Section 7 algorithm in https://link.springer.com/article/10.1007/s10851-026-01341-6
+NUM_POINTS = 4
 
 
 abortConnect = False
@@ -53,6 +54,7 @@ DISCONNECT_DETECT_TIME = 4
 lastMessage = 0
 LONG_PRESS_TIME = 0.75
 FONT_SIZE = 0.05
+TEXT_SPACING = 1.3*FONT_SIZE
 REPEAT_DELAY = 0.75
 REPEAT_TIME = 0.05
 CENTER_X = 1024/2
@@ -154,6 +156,8 @@ class Config():
                     line = f.readline().strip().split(",")
                     for j in range(2):
                         ledLocations[i][j]=float(line[j])/s[j]
+                if math.isnan(ledLocations[2][0]):  
+                    NUM_POINTS = 2
                 self.ledLocations = ledLocations
                 try:
                     for line in f:
@@ -190,8 +194,11 @@ class Config():
         if self.ledLocations:
             with open(LED_FILE, "w") as f:
                 f.write("1,1\n")
-                for l in self.ledLocations:
+                if i in range(NUM_POINTS):
+                    l = self.ledLocations[i]
                     f.write("%g,%g\n" % tuple(l))
+                if NUM_POINTS == 2:
+                    f.write("NaN,NaN\nNaN,NaN\n")
                 f.write("ycorrection %g\n" % self.yCorrection)
                 f.write("aspect %g\n" % self.aspect)
 
@@ -721,7 +728,25 @@ def getIRQuad(ir):
     count = len(points)
 
     if count < 2:
-        return None        
+        return None
+        
+    if NUM_POINTS == 2:
+        identified = identifyPoints(points)
+        if count == 2 or count == 3:
+            if 0 in identified and 1 in identified:
+                return [points[identified.index(0)],points[identified.index(1)],None,None]
+            elif 2 in identified and 3 in identified:
+                return [points[identified.index(2)],points[identified.index(3)],None,None]
+            else:
+                return None
+        elif count == 4:
+            if CONFIG.ledLocations[0][1] < .5:
+                # LEDs are on bottom
+                return [points[identified.index(0)],points[identified.index(1)],None,None]
+            else:
+                # or on top
+                return [points[identified.index(3)],points[identified.index(2)],None,None]
+        
     if count == 2 or (count == 3 and not USE_P3P):
         identified = identifyPoints(points)
         if 0 in identified and 1 in identified:
@@ -837,8 +862,8 @@ def measure(flexible=False,screenWidth=1.):
             if s is not None:
                 drawCross(s,color=RED)
 
-        drawText("HOME: quit without saving", y=0.5+0.075*2)
-        drawText("A: done", y=0.5+0.075*3)
+        drawText("HOME: quit without saving", y=0.5+TEXT_SPACING*2)
+        drawText("A: done", y=0.5+TEXT_SPACING*3)
 
         buttons = getButtons(wm.state)
         pressed = buttons &~ prevButtons
@@ -860,9 +885,12 @@ def measure(flexible=False,screenWidth=1.):
         if corner==4:
             yCorrection += move[1]
 
-        for i in range(4):
+        for i in range(NUM_POINTS):
             xy = ledPixel[i]
-            bottom = UNIT_SQUARE[i][1] < 0.5
+            if NUM_POINTS > 2:
+                bottom = UNIT_SQUARE[i][1] < 0.5
+            else:
+                bottom = xy[1] < .5
             if xy[1] > 0 and bottom:
                 xy[1] = 0
             if xy[1] < WINDOW_SIZE[1]-1 and not bottom:
@@ -887,11 +915,13 @@ def measure(flexible=False,screenWidth=1.):
         
         if corner<4:
             drawText("DPad: move LED location",y=0.5)
-            drawText("-/+: next/previous setting",y=0.5+0.075)
-            drawText("LED is %.4g units (%.1f px) off-screen" % (length*scale, length),y=0.5+0.075*4)
+            drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
+            if NUM_POINTS == 2:
+                drawText("1/2: LEDs on top/bottom",y=0.5+TEXT_SPACING*4)
+            drawText("LED is %.4g units (%.1f px) off-screen" % (length*scale, length),y=0.5+TEXT_SPACING*(4 if NUM_POINTS==4 else 5))
         else:
             drawText("Up/Down: adjust Y correction",y=0.5)
-            drawText("-/+: next/previous setting",y=0.6)               
+            drawText("-/+: next/previous setting",y=0.6)
             drawText("Y correction is %.4g units (%.1f px)" % (yCorrection*scale, yCorrection),y=0.5+0.075*4)
             ax = int(size[0]//4)
             ay = int(size[1]*0.5-yCorrection/2)            
@@ -901,11 +931,25 @@ def measure(flexible=False,screenWidth=1.):
 
         if pressed & wiimote.BTN_PLUS:
             corner = (corner+1) % 5
+            if NUM_POINTS == 2 and corner == 2:
+                    corner = 4
         elif pressed & wiimote.BTN_MINUS:
             corner = (corner-1) % 5
+            if NUM_POINTS == 2 and corner == 3:
+                corner = 1
+        elif pressed & wiimote.BTN_1:
+            if ledPixel[0][1] < .5*size[1]:
+                ledPixel[0][1] = size[1]-ledPixel[0][1]
+            if ledPixel[1][1] < .5*size[1]:
+                ledPixel[1][1] = size[1]-ledPixel[1][1]
+        elif pressed & wiimote.BTN_2:
+            if ledPixel[0][1] > .5*size[1]:
+                ledPixel[0][1] = size[1]-ledPixel[0][1]
+            if ledPixel[1][1] > .5*size[1]:
+                ledPixel[1][1] = size[1]-ledPixel[1][1]
         elif ( pressed & wiimote.BTN_A ):
             done = True
-            break                        
+            break              
             
         pygame.display.flip()
 
@@ -1076,8 +1120,9 @@ def center():
 
     for i in range(2): 
         for p in quads[0]:
-            sx += p[0]
-            sy += p[1]
+            if p is not None:
+                sx += p[0]
+                sy += p[1]
             
     CENTER_X = sx / 8. * 1024.
     CENTER_Y = sy / 8. * 768.
@@ -1223,7 +1268,7 @@ def connect(backgroundTimeout=0):
             wm = wiimote.MyWiimote()
             print(getAddress(wm))
             wm.mesg_callback = wiimoteCallback
-            wm.rpt_mode = wiimote.RPT_IR | wiimote.RPT_BTN | wiimote.RPT_ACC # | wiimote.RPT_EXT
+            wm.rpt_mode = wiimote.RPT_IR | wiimote.RPT_BTN | wiimote.RPT_ACC | wiimote.RPT_EXT
             wm.enable(wiimote.FLAG_MESG_IFC)
             wm.led = wiimote.LED1_ON | wiimote.LED4_ON
             CENTER_X,CENTER_Y = CONFIG.getCenter(wm)
@@ -1253,7 +1298,8 @@ def run(command):
     abortConnect = True
                 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Calibrate and use Wiimote with four IR LEDs around screen.")
+    parser = argparse.ArgumentParser(description="Calibrate and use Wiimote with two/four IR LEDs around screen.")
+    parser.add_argument("--two-point", action="store_true", help="Force two LED mode [experimental]")
     parser.add_argument("-c", "--calibrate", action="store_true", help="Force calibration")
     parser.add_argument("-C", "--center", action="store_true", help="Center calibration for individual Wiimote")
     parser.add_argument("-M", "--measure", action="store_true", help="Calibrate by manual measurement of IR LED positions.")
@@ -1269,7 +1315,7 @@ if __name__ == '__main__':
     parser.add_argument("-r", "--rumble", action="store_true", help="Rumble on fire")
     parser.add_argument("-s", "--sensitivity", type=int, default=-1, help="IR sensitivity (1-5)")
     parser.add_argument("--p3p", action="store_true", help="Allow P3P as fallback")
-    parser.add_argument("--p2pa", action="store_true", help="Allow P3P as fallback")
+    parser.add_argument("--p2pa", action="store_true", help="Allow P2PA as fallback")
     parser.add_argument("command", help="Run this command while simulating a mouse", nargs="?")
     args = parser.parse_args()
 
@@ -1280,6 +1326,7 @@ if __name__ == '__main__':
 
     USE_P3P = args.p3p
     USE_P2PA = args.p2pa
+    NUM_POINTS = 2 if args.two_point else 4
     
     LED_FILE = args.led_file
     CONFIG = Config()
@@ -1290,6 +1337,10 @@ if __name__ == '__main__':
 
     if args.sensitivity >= 0:
         wiimote.set_ir_sensitivity(args.sensitivity)
+        
+    if args.calibrate and args.two_point:
+        print("Calibration is not compatible with two-point mode.")
+        sys.exit(1)
     
     if args.calibrate or args.measure:
         ledLocations = None

@@ -79,6 +79,10 @@ IR_CALIBRATION_SIZE = 11
 ACCEL_CALIBRATION_OFFSET = 2 * IR_CALIBRATION_SIZE
 ACCEL_CALIBRATION_SIZE = 10
 CALIBRATION_SIZE = 2 * IR_CALIBRATION_SIZE + ACCEL_CALIBRATION_SIZE
+DEFAULT_IR_LEVEL = 5
+
+def set_ir_sensitivity(s):
+    DEFAULT_IR_LEVEL = s
 
 def parseIRCalibration(data):
     if len(data) < 11:
@@ -282,7 +286,7 @@ class Wiimote:
         write_cmd = bytes([0x16, RW_REG, (address&0xFF0000)>>16, (address&0xFF00)>>8, address&0xFF, len(data)] + paddedData)
         self.send(write_cmd)
             
-    def enable(self,mode=0,irLevel=5): # mode is ignored
+    def enable(self,mode=0,irLevel=DEFAULT_IR_LEVEL): # mode is ignored
         self.listening = True
         self.listenThread = Thread(target = self.listen, args=(irLevel,))
         self.listenThread.start()
@@ -400,7 +404,7 @@ class Wiimote:
                             y = (0xFF & data[offset+3]) << 2 | (3&(data[offset+5] >> 4))
                             z = (0xFF & data[offset+4]) << 2 | (3&(data[offset+5] >> 6))
                             nunchuk["acc_raw"] = (x,y,z)
-                            nunchuk["joy"] = (data[offset]&0xFF,data[offset]&0xFF)
+                            nunchuk["stick"] = (data[offset]&0xFF,data[offset]&0xFF)
                             out["nunchuk"] = nunchuk
 
                 self.state = out
