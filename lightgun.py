@@ -19,7 +19,7 @@ import subprocess
 import cv2
 from scipy.spatial.transform import Rotation
 
-USE_P3P = True # fallback to P3P if only three points are visible; otherwise fallback to P2P with assumption about
+USE_P3P = False # fallback to P3P if only three points are visible; otherwise fallback to P2P with assumption about
                # gun being centered on screen
 P3P_PROXIMITY_PREFERENCE = False # choose the solution closest to the last solution; otherwise, use acceleration data to choose the best solution
 USE_P2PA = False # fallback to P2PA if only bottom markers or only top markers are visible; ensure markers are equal height
@@ -1261,15 +1261,20 @@ if __name__ == '__main__':
     parser.add_argument("-b", "--buttons-name", help="Set name of buttons device", default="WiimoteButtons")
     parser.add_argument("-l", "--led-file", help="Configuration file for LEDs", default=LED_FILE)
     parser.add_argument("-B", "--background-connect", type=float, default=0, help="Connect in background for this many seconds")
-    parser.add_argument("command", help="Run this command while simulating a mouse", nargs="?")
     parser.add_argument("-r", "--rumble", action="store_true", help="Rumble on fire")
     parser.add_argument("-s", "--sensitivity", type=int, default=-1, help="IR sensitivity (1-5)")
+    parser.add_argument("--p3p", action="store_true", help="Allow P3P as fallback")
+    parser.add_argument("--p2pa", action="store_true", help="Allow P3P as fallback")
+    parser.add_argument("command", help="Run this command while simulating a mouse", nargs="?")
     args = parser.parse_args()
 
     try:
         os.mkdir(CONFIG_DIR)
     except:
         pass
+
+    USE_P3P = args.p3p
+    USE_P2PA = args.p2pa
     
     LED_FILE = args.led_file
     CONFIG = Config()
