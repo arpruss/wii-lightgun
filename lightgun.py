@@ -297,9 +297,14 @@ def pointerPosition2LED(p1,p2,led1,led2,g):
 
         cameraPosition = solutionToXYZ(m1,m2,*computeP2PA(m1,m2,cos_beta,rho1,rho2))
     else:
+        # Assume gun lies on the ray coming out of the center of the screen.
+        # This assumption appears good enough for practical purposes even if the user is aligned
+        # with the edge of the TV, for a typical viewing distance.
         rayAngle = math.acos(dir1Orig.dot(dir2Orig) / (np.linalg.norm(dir1Orig) * np.linalg.norm(dir2Orig)))
-        cameraDistance = abs(led1[0]-led2[0]) * CONFIG.aspect / (2. * math.tan(rayAngle / 2))
-        cameraPosition = np.array([CONFIG.aspect*.5,-cameraDistance,.5])
+        cameraDistanceFromLEDMidpoint = abs(led1[0]-led2[0]) * CONFIG.aspect / (2. * math.tan(rayAngle / 2))
+        cameraDistanceFromTVCenter = math.sqrt(cameraDistanceFromLEDMidpoint*cameraDistanceFromLEDMidpoint-avgHeight*avgHeight)
+        
+        cameraPosition = np.array([CONFIG.aspect*.5,-cameraDistanceFromTVCenter,.5])
     
     dir1Obj = m1 - cameraPosition
     dir2Obj = m2 - cameraPosition
