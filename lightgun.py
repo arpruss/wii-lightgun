@@ -69,6 +69,7 @@ ASPECT_RATIO = 1920./1080
 FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4, 1634.5??
 CAMERA_HEIGHT_PIXELS = 768
 
+DEFAULT_IR_CALIBRATION = [(127,93),(896,93),(896,674),(127,674)]
 CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
 UNIT_SQUARE = ((0,0), (1,0), (1,1), (0,1))
 
@@ -390,6 +391,9 @@ INTRINSIC = np.array( ( [FOCAL_LENGTH_PIXELS/768.,0,0.0],
 
 class Homography:
     def __init__(self,input,output):
+        if input is None: # identity
+            self.matrix = None
+            return
         self.matrix,_ = cv2.findHomography(np.float64(input),np.float64(output))
 
     #def jacobianAtOrigin(self):
@@ -397,6 +401,8 @@ class Homography:
     #                     (self.d-self.f*self.g, self.e-self.f*self.h) )
 
     def minimumScalingAtOrigin(self, aspect):
+        if self.matrix is None:
+            return 1.
         # This measures the lowest scaling between camera and screen coordinates.
         # This should correspond to the correct conversion between camera and screen coordinates 
         # for y adjustment (sightline parallax).
@@ -416,6 +422,8 @@ class Homography:
         return math.sqrt((S1-S2)/2.)
 
     def apply(self,xy):
+        if self.matrix is None:
+            return xy
         out = cv2.perspectiveTransform(np.array(((xy,),),dtype=np.float64),self.matrix)
         return out[0][0]
 
@@ -470,9 +478,11 @@ def showPoints(ir,irQuad):
     
 def getPoint(p):
     try:
-        return (p[0][0]-CENTER_X) / 768., (p[0][1]-CENTER_Y) / 768.
+        xy = (p[0][0],p[0][1])
     except:
-        return (p['pos'][0]-CENTER_X) / 768., (p['pos'][1]-CENTER_Y) / 768.
+        xy = (p['pos'][0],p['pos'][1])
+    xy = calibrationHomography.apply(xy)
+    return (xy[0]-CENTER_X)/768., (xy[1]-CENTER_Y)/768.
     
 def getSize(p):
     try:
@@ -499,7 +509,7 @@ def updateAcceleration(state):
         if hasattr(wm, 'accel1gCalibration'):
             ga = [wm.accel1gCalibration[i]-ca[i] for i in range(3)]
         if ga == None:
-            ga = [100,100,100]
+            ga = [104,104,104]
             
         a = [a[0]/ga[0],a[1]/ga[1],a[2]/ga[2]]
     
@@ -1258,7 +1268,7 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                     (device if u == myinput.BTN_LEFT or u == myinput.BTN_RIGHT else device2).release(u)
 
 def connect(backgroundTimeout=0):
-    global wm, lastMessage, CENTER_X, CENTER_Y, crash
+    global wm, lastMessage, CENTER_X, CENTER_Y, crash, calibrationHomography
     wm = None
     t0 = time.monotonic()
     CONNECTED_EVENT.clear()
@@ -1267,11 +1277,19 @@ def connect(backgroundTimeout=0):
         try:
             wm = wiimote.MyWiimote()
             print(getAddress(wm))
+            if USE_CALIBRATION_HOMOGRAPHY and hasattr(wm,'irCalibration'):
+                calibrationHomography = Homography(wm.irCalibration,DEFAULT_IR_CALIBRATION)
+                CENTER_X = 512
+                CENTER_Y = 384
+                inv = Homography(DEFAULT_IR_CALIBRATION,wm.irCalibration)
+                print("using calibration homography, center at ",inv.apply((512,384)))
+            else:
+                calibrationHomography = Homography(None,None)
+                CENTER_X,CENTER_Y = CONFIG.getCenter(wm)
             wm.mesg_callback = wiimoteCallback
             wm.rpt_mode = wiimote.RPT_IR | wiimote.RPT_BTN | wiimote.RPT_ACC | wiimote.RPT_EXT
             wm.enable(wiimote.FLAG_MESG_IFC)
             wm.led = wiimote.LED1_ON | wiimote.LED4_ON
-            CENTER_X,CENTER_Y = CONFIG.getCenter(wm)
             # give it a bit of extra time for messages to start flowing
             CONNECTED_EVENT.set()
             lastMessage = time.monotonic()+5

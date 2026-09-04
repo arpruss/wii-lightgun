@@ -44,6 +44,9 @@ def parseAccelCalibration(data):
     return accel0g, accel1g
 
 def setCalibration(wm,buffer):
+    wm.accel0gCalibration = [(512,512,512)]
+    wm.accel1gCalibration = [(616,616,616)]
+    wm.irCalibration = [(127,93),(896,93),(896,674),(127,674)]
     irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_1:])
     if not irc:
         irc = parseIRCalibration(buffer[IR_CALIBRATION_OFFSET_2:])

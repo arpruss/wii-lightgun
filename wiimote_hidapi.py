@@ -94,9 +94,22 @@ def parseIRCalibration(data):
         return (data[bits07_offset] & 0xFF) | (((data[bits89_offset] >> bits89_shift) & 0x3) << 8)    
     
     irc = [ (getCoordinate(*icl[0]), getCoordinate(*icl[1])) for icl in IR_CALIBRATION_LOCATIONS ]
-    irc.sort()
-
-    return irc
+    
+    def find(x,y):
+        def cmp(a,b,d): 
+            if not d:
+                return a<b
+            else:
+                return b<a
+        for i in range(4):
+            if cmp(irc[i][0],512,x) and cmp(irc[i][1],384,y):
+                return irc[i]
+        raise RuntimeError()
+    try:
+        # sort counterclockwise from lower left
+        return [ find(0,0), find(1,0), find(1,1), find(0,1) ]
+    except RuntimeError:
+        return None
  
 def parseAccelCalibration(data):
     if len(data) < 10:
@@ -132,7 +145,10 @@ class Wiimote:
         self.timeout = timeout
         self.connectTimeout = connectTimeout
         self.address = None
-        self.state = { 'buttons': 0, 'acc_raw': [512,512,612], 'acc_calib': [0.,0.,1.], 'ir': [None,None,None,None] }
+        self.state = { 'buttons': 0, 'acc_raw': [512,512,616], 'acc_calib': [0.,0.,1.], 'ir': [None,None,None,None] }
+        self.accel0gCalibration = [(512,512,512)]
+        self.accel1gCalibration = [(616,616,616)]
+        self.irCalibration = [(127,93),(896,93),(896,674),(127,674)]
         self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC#|RPT_EXT
         self.mesg_callback = lambda data,t: None
         
