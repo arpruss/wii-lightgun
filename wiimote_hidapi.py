@@ -360,9 +360,9 @@ class Wiimote:
                 y = (0xFF & data[4]) << 2 | (2&(buttons >> 4))
                 z = (0xFF & data[5]) << 2 | (2&(buttons >> 5))
                 out["acc_raw"] = (x,y,z)
-                out["acc_calib"] = ( (x-self.accel0gCalibration[0])/self.accel1gCalibration[0],
-                               (y-self.accel0gCalibration[1])/self.accel1gCalibration[1],
-                               (z-self.accel0gCalibration[2])/self.accel1gCalibration[2] )
+                out["acc_calib"] = ( (x-self.accel0gCalibration[0])/(self.accel1gCalibration[0]-self.accel0gCalibration[0]),
+                               (y-self.accel0gCalibration[1])/(self.accel1gCalibration[1]-self.accel0gCalibration[1]),
+                               (z-self.accel0gCalibration[2])/(self.accel1gCalibration[2]-self.accel0gCalibration[2]) )
                 offset = 6
                 irData = []
                 if data[0] == 0x33:

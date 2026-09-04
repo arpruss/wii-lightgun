@@ -17,14 +17,14 @@ import threading
 import argparse
 import subprocess
 import cv2
+from scipy.spatial.transform import Rotation
 
-USE_P3P = True # fallback to P3P if only three points are visible 
+USE_P3P = True # fallback to P3P if only three points are visible; otherwise fallback to P2P with assumption about
+               # gun being centered on screen
 P3P_PROXIMITY_PREFERENCE = False # choose the solution closest to the last solution; otherwise, use acceleration data to choose the best solution
-USE_P2PA = True # fallback to P2PA if only bottom markers or only top markers are visible; ensure markers are equal height
+USE_P2PA = False # fallback to P2PA if only bottom markers or only top markers are visible; ensure markers are equal height
 # P2PA is the Section 7 algorithm in https://link.springer.com/article/10.1007/s10851-026-01341-6
 
-if USE_P2PA:
-    from scipy.spatial.transform import Rotation
 
 abortConnect = False
 
@@ -201,9 +201,8 @@ class Config():
         for i in range(4):
             if irQuad[i] is not None:
                 valid.append(i)
-        if USE_P2PA and len(valid) == 2:
-            return pointerPositionP2PA(irQuad[valid[0]],irQuad[valid[1]],CONFIG.ledLocations[valid[0]],CONFIG.ledLocations[valid[1]],lastAccel)
-            
+        if len(valid) == 2:
+            return pointerPosition2LED(irQuad[valid[0]],irQuad[valid[1]],CONFIG.ledLocations[valid[0]],CONFIG.ledLocations[valid[1]],lastAccel if USE_P2PA else None)
         if len(valid) != 4:
             return None
     
@@ -270,30 +269,38 @@ def n(v):
 def cross2D(p,q):
     return p[0]*q[1]-p[1]*q[0]
         
-def pointerPositionP2PA(p1,p2,led1,led2,g):
+def pointerPosition2LED(p1,p2,led1,led2,g):
+    # if g is non-zero, use P2PA
     dir1Orig = np.array([ (p1[0])*CAMERA_HEIGHT_PIXELS,FOCAL_LENGTH_PIXELS,(p1[1])*CAMERA_HEIGHT_PIXELS])
     dir2Orig = np.array([ (p2[0])*CAMERA_HEIGHT_PIXELS,FOCAL_LENGTH_PIXELS,(p2[1])*CAMERA_HEIGHT_PIXELS])
-    down = np.array([0.,0.,-1.])
-    g = -n(g)
-    prod = np.cross(g,down)
-    accelerometerRotation = Rotation.align_vectors( [down,prod],[g,prod] )[0].as_matrix()
-
-    # accelerometerRotation.dot(g) should equal down
-    dir1 = accelerometerRotation.dot(dir1Orig)
-    dir2 = accelerometerRotation.dot(dir2Orig)
     avgHeight = (led1[1]+led2[1])/2
     m1 = (led1[0]*CONFIG.aspect,CONFIG.ledOffset,avgHeight)
-    m2 = (led2[0]*CONFIG.aspect,CONFIG.ledOffset,avgHeight) 
-    d1 = math.hypot(dir1[0],dir1[1])
-    d2 = math.hypot(dir2[0],dir2[1])
-    h1 = -dir1[2]
-    h2 = -dir2[2]
+    m2 = (led2[0]*CONFIG.aspect,CONFIG.ledOffset,avgHeight)
     
-    cos_beta = cosAngle((dir1[0],dir1[1]),(dir2[0],dir2[1]))
-    rho1 = math.pi-math.atan2(d1,h1)
-    rho2 = math.pi-math.atan2(d2,h2)
+    if g is not None:
+        down = np.array([0.,0.,-1.])
+        g = -n(g)
+        prod = np.cross(g,down)
+        accelerometerRotation = Rotation.align_vectors( [down,prod],[g,prod] )[0].as_matrix()
 
-    cameraPosition = solutionToXYZ(m1,m2,*computeP2PA(m1,m2,cos_beta,rho1,rho2))
+        # accelerometerRotation.dot(g) should equal down
+        dir1 = accelerometerRotation.dot(dir1Orig)
+        dir2 = accelerometerRotation.dot(dir2Orig)
+        d1 = math.hypot(dir1[0],dir1[1])
+        d2 = math.hypot(dir2[0],dir2[1])
+        h1 = -dir1[2]
+        h2 = -dir2[2]
+        
+        cos_beta = cosAngle((dir1[0],dir1[1]),(dir2[0],dir2[1]))
+        rho1 = math.pi-math.atan2(d1,h1)
+        rho2 = math.pi-math.atan2(d2,h2)
+
+        cameraPosition = solutionToXYZ(m1,m2,*computeP2PA(m1,m2,cos_beta,rho1,rho2))
+    else:
+        rayAngle = math.acos(dir1Orig.dot(dir2Orig) / (np.linalg.norm(dir1Orig) * np.linalg.norm(dir2Orig)))
+        cameraDistance = abs(led1[0]-led2[0]) * CONFIG.aspect / (2. * math.tan(rayAngle / 2))
+        cameraPosition = np.array([CONFIG.aspect*.5,-cameraDistance,.5])
+    
     dir1Obj = m1 - cameraPosition
     dir2Obj = m2 - cameraPosition
     
@@ -465,7 +472,7 @@ def updateAcceleration(state):
     global lastAngle,lastAccel,lastAccelTime
     
     if "acc_calib" in state:
-        a = state["acc_calib"]
+        a = list(state["acc_calib"])
     else:    
         accel = state["acc"]
         ca = None   
@@ -478,7 +485,7 @@ def updateAcceleration(state):
         
         ga = None
         if hasattr(wm, 'accel1gCalibration'):
-            ga = wm.accel1gCalibration
+            ga = [wm.accel1gCalibration[i]-ca[i] for i in range(3)]
         if ga == None:
             ga = [100,100,100]
             
@@ -519,7 +526,7 @@ def identifyPoints(points):
 
     identified = [None for i in range(n)]
     
-    if n<2 or (n==2 and not USE_P2PA):
+    if n<2:
         return identified
 
     rot = lastAngle-math.pi/2
@@ -708,29 +715,19 @@ def getIRQuad(ir):
 
     count = len(points)
 
-    if USE_P2PA:
-        if count < 2:
-            return None        
-        if count == 2:
-            identified = identifyPoints(points)
-            if (0 in identified and 1 in identified) or (2 in identified and 3 in identified):
-                q = []
-                for i in range(4):
-                    if i in identified:
-                        q.append(points[identified.index(i)])
-                    else:
-                        q.append(None)
-                return q
-            else:
-                return None
-            
+    if count < 2:
+        return None        
+    if count == 2 or (count == 3 and not USE_P3P):
+        identified = identifyPoints(points)
+        if 0 in identified and 1 in identified:
+            return [points[identified.index(0)],points[identified.index(1)],None,None]
+        elif 2 in identified and 3 in identified:
+            return [None,None,points[identified.index(2)],points[identified.index(3)]]
+        else:
+            return None
     if count !=3 and count != 4:
         return None
-
-    if count == 3 and not USE_P3P:
-        return None
-
-    if count == 3:
+    if count == 3: # USE_P3P
         points = points3To4(points)
         if points is None:
             return None
@@ -1221,7 +1218,7 @@ def connect(backgroundTimeout=0):
             wm = wiimote.MyWiimote()
             print(getAddress(wm))
             wm.mesg_callback = wiimoteCallback
-            wm.rpt_mode = wiimote.RPT_IR | wiimote.RPT_BTN | wiimote.RPT_ACC | wiimote.RPT_EXT
+            wm.rpt_mode = wiimote.RPT_IR | wiimote.RPT_BTN | wiimote.RPT_ACC # | wiimote.RPT_EXT
             wm.enable(wiimote.FLAG_MESG_IFC)
             wm.led = wiimote.LED1_ON | wiimote.LED4_ON
             CENTER_X,CENTER_Y = CONFIG.getCenter(wm)
