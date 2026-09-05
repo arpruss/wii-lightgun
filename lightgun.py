@@ -373,7 +373,7 @@ def wiimoteWait(timeout=None):
     WIIMOTE_EVENT.wait(timeout if timeout is not None and timeout < DISCONNECT_DETECT_TIME else DISCONNECT_DETECT_TIME)
     if time.monotonic() > lastMessage + DISCONNECT_DETECT_TIME:
         print("Disconnect detected")
-        connect()
+        connect(silent=True)
         CONNECTED_EVENT.wait()
         if crash:
             sys.exit(0)
@@ -1279,9 +1279,8 @@ def connectMessage(msg):
         drawText("Make sure Wii is turned off", y=0.7)
         drawText("Press ESC to exit", y=0.8)
         pygame.display.flip()
-        
 
-def connect(backgroundTimeout=0):
+def connect(backgroundTimeout=0,silent=False):
     global wm, lastMessage, CENTER_X, CENTER_Y, crash, calibrationHomography
     wm = None
     t0 = time.monotonic()
@@ -1289,7 +1288,8 @@ def connect(backgroundTimeout=0):
     crash = False
     while True:
         try:
-            wm = wiimote.MyWiimote(connectCallback=connectMessage)
+            print("Attempting to connect to Wii Remote")
+            wm = wiimote.MyWiimote(connectCallback=connectMessage if not silent else None)
             print(getAddress(wm))
             if USE_CALIBRATION_HOMOGRAPHY and hasattr(wm,'irCalibration'):
                 calibrationHomography = Homography(wm.irCalibration,DEFAULT_IR_CALIBRATION)

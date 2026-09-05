@@ -145,6 +145,7 @@ class Wiimote:
     def __init__(self, timeout=5, connectTimeout=15, connectCallback=None):
         self.connectCallback = connectCallback if connectCallback is not None else lambda msg: None
         self.timeout = timeout
+        self.timeout_ms = int(timeout * 1000)
         self.connectTimeout = connectTimeout
         self.address = None
         self.state = { 'buttons': 0, 'acc_raw': [512,512,616], 'acc_calib': [0.,0.,1.], 'ir': [None,None,None,None] }
@@ -160,11 +161,12 @@ class Wiimote:
         else:
             self.connectCallback("Press 1+2 on Wii Remote")
             self.initSocket()
+        
+        self.opened = True
         self.rumble = False
         self.led = 0x60
         self.send((0x12,0x04,0x30))
-        if not self.calibrate():
-            raise RuntimeError()
+        self.calibrate()
         self.led = 0xF0-0x60
         if self.address is None:
             self.address = "wiimote"
@@ -193,6 +195,8 @@ class Wiimote:
             except:
                 pass
             self.listening = False
+            
+        self.opened = False
             
         if USE_HID:
             try:
@@ -251,8 +255,16 @@ class Wiimote:
         self.handle.set_nonblocking(False)
         
     def recv(self,size):
+        if not self.opened:
+            return None
         if USE_HID:
-            return self.handle.read(size)
+            try:
+                data = self.handle.read(size,timeout_ms=self.timeout_ms)
+            except OSError:
+                data = None
+            if not data:
+                self.close()
+            return data
         else:
             data = self.s_interrupt.recv(size+1)
             if data and data[0] & 0xFF == 0xA1:
@@ -261,8 +273,13 @@ class Wiimote:
                 return None
             
     def send(self,out):
+        if not self.opened:
+            return None
         if USE_HID:
-            self.handle.write(bytes(out))
+            try:
+                self.handle.write(bytes(out))
+            except OSError:
+                self.close()
         else:
             self.s_interrupt.send(bytes((0xA2,)) + bytes(out))
             
@@ -381,6 +398,7 @@ class Wiimote:
         while self.listening:
             data = self.recv(reportSize)
             if not data:
+                time.sleep(0.01)
                 continue
             if data[0] == 0x20 and len(data) >= 7:
                 if (self.rpt_mode & RPT_EXT) and data[3] & 0x02:
@@ -481,6 +499,6 @@ if __name__=='__main__':
     w.rpt_mode=RPT_IR|RPT_EXT
     w.enable(mode=RPT_IR|RPT_EXT)
     print("running")
-    while True:
+    while w.opened:
         time.sleep(1)
         pass
