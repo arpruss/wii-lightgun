@@ -5,6 +5,7 @@ import hashlib
 import time
 from wiimote_constants import *
 from threading import Thread
+from windows_get_address import get_mac_from_hid_path
 
 if os.name == 'nt':
     USE_HID = True
@@ -186,14 +187,14 @@ class Wiimote:
                     data = handle.read(32, timeout_ms=500)
                     if not data:
                         raise IOError()
-                    print(f"Found Wiimote at: {path}")
-                    self.path = path
-                    openedWiimotes.add(path)
-                    
-                    return handle
                 except:
                     handle.close()
                     continue
+                    
+                print(f"Found Wiimote at: {path}")
+                self.path = path
+                openedWiimotes.add(path)
+                return handle
         return None
 
     def initHID(self,connectTimeout=15):
@@ -213,6 +214,11 @@ class Wiimote:
             if not self.handle:
                 print("Failed to connect")
                 raise RuntimeError()
+        if os.name == "nt":
+            try:
+                self.id = get_mac_from_hid_path(self.path)
+            except:
+                pass
         
     def recv(self,size):
         if not self.opened:
