@@ -11,7 +11,8 @@ if os.name == 'nt':
     if WINDOWS_USE_WiiPair_exe:
         import subprocess
     else:
-        import windows.wiipair as wiipair
+        #import windows.wiipair as wiipair
+        from windows.wp import pair_wiimote
 else:
     USE_HID = ALWAYS_HIDAPI 
 
@@ -141,7 +142,8 @@ def WiiPair(connectTimeout=15):
         return wiipair.pair_wiimote(timeout=connectTimeout)
     
 class Wiimote:
-    def __init__(self, timeout=5, connectTimeout=15):
+    def __init__(self, timeout=5, connectTimeout=15, connectCallback=None):
+        self.connectCallback = connectCallback if connectCallback is not None else lambda msg: None
         self.timeout = timeout
         self.connectTimeout = connectTimeout
         self.address = None
@@ -155,6 +157,7 @@ class Wiimote:
         if USE_HID:
             self.initHID(connectTimeout=connectTimeout+5)
         else:
+            self.connectCallback("Press 1+2 on Wii Remote")
             self.initSocket()
         self.led = 0x60
         self.send((0x12,0x04,0x30))
@@ -228,10 +231,12 @@ class Wiimote:
         return None
 
     def initHID(self,connectTimeout=15):
+        self.connectCallback("Trying quick connect")
         self.handle = self.openWiimote()
         if not self.handle:
             if os.name == "nt":
-                WiiPair(connectTimeout=connectTimeout)
+                pair_wiimote(timeout=connectTimeout,connectCallback=self.connectCallback)
+                #WiiPair(connectTimeout=connectTimeout)
             t = time.monotonic()
             while not self.handle and time.monotonic() < t + self.timeout:
                 self.handle = self.openWiimote()
@@ -451,7 +456,7 @@ if __name__=='__main__':
     print(w.irCalibration)
     print(w.accel0gCalibration)
     print(w.accel1gCalibration)
-    w.mesg_callback = lambda data,t: print(data)
+#    w.mesg_callback = lambda data,t: print(data)
     print("enabling")
     w.rpt_mode=RPT_IR|RPT_EXT
     w.enable(mode=RPT_IR|RPT_EXT)

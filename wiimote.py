@@ -89,7 +89,9 @@ if not WIIUSE:
             ir_block2[:] = IR_LEVELS[value-1][1]
 
         class MyWiimote(Wiimote):
-            def __init__(self):
+            def __init__(self,connectCallback=None):
+                if connectCallback is not None:
+                    connectCallback("Press 1+2 on Wii Remote")
                 self.irCalibration = None
                 self.accel0gCalibration = None
                 self.accel1gCalibration = None
@@ -153,7 +155,9 @@ if WIIUSE:
 
     # TODO: support more than one wiimote
     class MyWiimote:
-        def __init__(self):
+        def __init__(self,connectCallback=None):
+            if connectCallback is not None:
+                connectCallback("Press 1+2 on Wii Remote")
             self.wiimotes = wiiuse.init(1)
             if not wiiuse.find(self.wiimotes, 1, WIIUSE_TIMEOUT):
                 raise RuntimeError

@@ -25,7 +25,7 @@ P3P_PROXIMITY_PREFERENCE = False # choose the solution closest to the last solut
 USE_P2PA = False # fallback to P2PA if only bottom markers or only top markers are visible; ensure markers are equal height
 # P2PA is the Section 7 algorithm in https://link.springer.com/article/10.1007/s10851-026-01341-6
 NUM_POINTS = 4
-
+USE_CALIBRATION_HOMOGRAPHY = False
 
 abortConnect = False
 
@@ -39,6 +39,7 @@ RED = (255,0,0)
 GRAY = (64,64,64)
 DARK_GREEN = (0,64,0)
 VERY_DARK_GREEN = (0,32,0)
+MYFONT = None
 WINDOW_SIZE = None
 PXSCALE = 1
 ACCEL_FILTER_TIME = 0.25
@@ -1266,6 +1267,19 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
             finally:
                 for u in uinputPressed:
                     (device if u == myinput.BTN_LEFT or u == myinput.BTN_RIGHT else device2).release(u)
+                    
+def connectMessage(msg):
+    if args.background_connect:
+        return
+    if not MYFONT:
+        print(msg)
+    else:
+        surface.fill(BLACK)
+        drawText(msg)
+        drawText("Make sure Wii is turned off", y=0.7)
+        drawText("Press ESC to exit", y=0.8)
+        pygame.display.flip()
+        
 
 def connect(backgroundTimeout=0):
     global wm, lastMessage, CENTER_X, CENTER_Y, crash, calibrationHomography
@@ -1275,7 +1289,7 @@ def connect(backgroundTimeout=0):
     crash = False
     while True:
         try:
-            wm = wiimote.MyWiimote()
+            wm = wiimote.MyWiimote(connectCallback=connectMessage)
             print(getAddress(wm))
             if USE_CALIBRATION_HOMOGRAPHY and hasattr(wm,'irCalibration'):
                 calibrationHomography = Homography(wm.irCalibration,DEFAULT_IR_CALIBRATION)
@@ -1349,10 +1363,6 @@ if __name__ == '__main__':
     LED_FILE = args.led_file
     CONFIG = Config()
 
-    thread = threading.Thread(target=connect, args=(args.background_connect,))
-    thread.daemon = True
-    thread.start()
-
     if args.sensitivity >= 0:
         wiimote.set_ir_sensitivity(args.sensitivity)
         
@@ -1374,22 +1384,21 @@ if __name__ == '__main__':
         surface = pygame.display.set_mode(WINDOW_SIZE, pygame.FULLSCREEN)
         pygame.mouse.set_visible(False)
         
+    thread = threading.Thread(target=connect, args=(args.background_connect,))
+    thread.daemon = True
+    thread.start()
+
+    if not args.terminal and (not args.background_connect or not ledLocations or args.center):
         running = True
         if not args.background_connect:
             while running and wm is None:
                 checkQuitAndKeys()
-                surface.fill(BLACK)
-                drawText("Press 1+2 on Wii Remote")
-                drawText("Make sure Wii is turned off", y=0.7)
-                drawText("Press ESC to exit", y=0.8)
-                pygame.display.flip()
                 CONNECTED_EVENT.wait(0.5)
                 if crash:
                     sys.exit(1)
             if not running:
                 sys.exit(0)
     elif not args.background_connect:
-        print("Press 1+2 on Wii Remote, making sure Wii is turned off.")
         CONNECTED_EVENT.wait()
         if crash:
             sys.exit(1)
