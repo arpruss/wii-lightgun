@@ -468,6 +468,8 @@ def clean_stale_wiimotes(hRadio):
     )
 
     purge_required = False
+    
+    toPurge = []
 
     for device in wiimotes:
 
@@ -488,46 +490,20 @@ def clean_stale_wiimotes(hRadio):
             f"authenticated={authenticated} "
             f"connected={connected}"
         )
+        
+        if remembered and not connected:
+            print("Need to purge")
+            toPurge.append(device)
 
-        if remembered and authenticated:
-
-            print(
-                "  Already paired/authenticated; "
-                "skipping purge."
-            )
-
-        elif remembered:
-
-            print(
-                "  Remembered but NOT authenticated; "
-                "stale record requires purge."
-            )
-
-            purge_required = True
-
-    if not purge_required:
-
-        print()
-        print(
-            "All remembered Wii Remotes are "
-            "authenticated. No purge necessary."
-        )
-
+    if not toPurge:
+        print("All remembered Wii Remotes are connected. No purge necessary.")
         return True
 
     # --------------------------------------------------------
-    # Remove only remembered + unauthenticated records.
+    # Remove only remembered + unconnected records.
     # --------------------------------------------------------
 
-    for device in wiimotes:
-
-        if not device.fRemembered:
-            continue
-
-        if device.fAuthenticated:
-            continue
-
-        print()
+    for device in toPurge:
         print(
             f"Removing stale record:"
         )
@@ -543,46 +519,23 @@ def clean_stale_wiimotes(hRadio):
             "to complete this operation."
         )
 
-        result = remove_device_with_timeout(
-            device.Address,
-            timeout=45,
-        )
+        result = remove_device_with_timeout(device.Address,timeout=45)
 
         if result is None:
-
-            print()
-            print(
-                "ERROR: BluetoothRemoveDevice() "
-                "did not complete."
-            )
-
+            print("ERROR: BluetoothRemoveDevice() did not complete.")
             return False
 
         if result == ERROR_SUCCESS:
-
-            print(
-                "Stale record removed successfully."
-            )
+            print("Stale record removed successfully.")
 
         elif result == ERROR_NOT_FOUND:
-
-            print(
-                "Record was already removed."
-            )
+            print("Record was already removed.")
 
         else:
-
-            print(
-                f"BluetoothRemoveDevice returned "
-                f"error {result}."
-            )
-
+            print(f"BluetoothRemoveDevice returned error {result}.")
             return False
 
-    print()
-    print(
-        "Waiting for Bluetooth stack to settle..."
-    )
+    print("Waiting for Bluetooth stack to settle...")
 
     time.sleep(1.0)
 
@@ -689,7 +642,8 @@ def find_wiimote(
                             f"{bool(target.fConnected)}"
                         )
 
-                        return target
+                        if not target.fConnected:
+                            return target
 
                     if not bth.BluetoothFindNextDevice(
                         hFind,
@@ -705,10 +659,6 @@ def find_wiimote(
 
         time.sleep(0.1)
 
-
-# ============================================================
-# Activate HID service
-# ============================================================
 
 def activate_hid_service(
     hRadio,
@@ -796,60 +746,26 @@ def pair_wiimote(
     hRadio = get_local_radio_handle()
 
     if not hRadio:
-
-        print(
-            "ERROR: Could not access local "
-            "Bluetooth adapter."
-        )
-
+        print("ERROR: Could not access local Bluetooth adapter.")
         return False
 
     try:
         connectCallback("Cleaning stale records")
 
-        # ----------------------------------------------------
-        # Phase 1: stale-record cleanup
-        # ----------------------------------------------------
-
-        if not clean_stale_wiimotes(
-            hRadio
-        ):
-
+        if not clean_stale_wiimotes(hRadio):
             connectCallback("Cleaning stale records failed")
-            time.sleep(0.5)
-
-        # ----------------------------------------------------
-        # Phase 2: fresh discovery
-        # ----------------------------------------------------
 
         connectCallback("Press 1+2 on Wii Remote")
-        device = find_wiimote(
-            hRadio,
-            timeout=timeout,
-        )
+        device = find_wiimote(hRadio,timeout=timeout)
 
         if device is None:
             return False
 
-        # ----------------------------------------------------
-        # Phase 3: HID activation
-        # ----------------------------------------------------
-
-        return activate_hid_service(
-            hRadio,
-            device,
-        )
+        return activate_hid_service(hRadio,device)
 
     finally:
+        kernel32.CloseHandle(hRadio)
 
-        kernel32.CloseHandle(
-            hRadio
-        )
-
-
-# ============================================================
-# Entry point
-# ============================================================
 
 if __name__ == "__main__":
 
