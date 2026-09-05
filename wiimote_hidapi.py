@@ -180,9 +180,9 @@ class Wiimote:
         self.s_control = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
         self.s_interrupt = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)        
         self.s_control.settimeout(self.connectTimeout)
-        self.s_control.connect((self.address, PSM_CONTROL))
+        self.s_control.connect((mac, PSM_CONTROL))
         self.s_interrupt.settimeout(self.connectTimeout)
-        self.s_interrupt.connect((self.address, PSM_INTERRUPT))
+        self.s_interrupt.connect((mac, PSM_INTERRUPT))
         self.s_control.settimeout(self.timeout)
         self.s_interrupt.settimeout(self.timeout)
         self.address = mac
@@ -191,6 +191,7 @@ class Wiimote:
         
     def close(self):
         if self.listening:
+            self.listening = False
             try:
                 self.send(bytes((0x13, 0x00)))
                 time.sleep(0.05)
@@ -198,7 +199,6 @@ class Wiimote:
                 time.sleep(0.05)
             except:
                 pass
-            self.listening = False
             
         self.opened = False
         openedWiimotes.discard(self.path)
@@ -266,31 +266,32 @@ class Wiimote:
     def recv(self,size):
         if not self.opened:
             return None
-        if USE_HID:
-            try:
+        try:
+            if USE_HID:
                 data = self.handle.read(size,timeout_ms=self.timeout_ms)
-            except OSError:
-                data = None
-            if not data:
-                self.close()
-            return data
-        else:
-            data = self.s_interrupt.recv(size+1)
-            if data and data[0] & 0xFF == 0xA1:
-                return data[1:]
+                if not data:
+                    raise OSError()
+                return data
             else:
-                return None
+                data = self.s_interrupt.recv(size+1)
+                if not data or data[0] & 0xFF != 0xA1:
+                    raise OSError()
+                return data[1:]
+        except OSError:
+            self.close()
+            return None
             
     def send(self,out):
         if not self.opened:
             return None
-        if USE_HID:
-            try:
+        try:
+            if USE_HID:
                 self.handle.write(bytes(out))
-            except OSError:
-                self.close()
-        else:
-            self.s_interrupt.send(bytes((0xA2,)) + bytes(out))
+            else:
+                self.s_interrupt.send(bytes((0xA2,)) + bytes(out))
+        except OSError:
+            raise Exception()
+            self.close()
             
     @property
     def rumble(self):
