@@ -12,7 +12,7 @@ if os.name == 'nt':
         import subprocess
     else:
         #import windows.wiipair as wiipair
-        from windows.wp import pair_wiimote
+        from windows.wiipair import pair_wiimote
 else:
     USE_HID = ALWAYS_HIDAPI 
 
@@ -174,10 +174,9 @@ class Wiimote:
             self.address = "wiimote"
         
     def initSocket(self):
-        mac = wiimote_scan.scan_wiimote_dbus_poll(timeout=self.connectTimeout)
+        mac = wiimote_scan.scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
         if not mac:
             raise RuntimeError()
-        self.address = mac
         self.s_control = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
         self.s_interrupt = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)        
         self.s_control.settimeout(self.connectTimeout)
@@ -186,6 +185,9 @@ class Wiimote:
         self.s_interrupt.connect((self.address, PSM_INTERRUPT))
         self.s_control.settimeout(self.timeout)
         self.s_interrupt.settimeout(self.timeout)
+        self.address = mac
+        self.path = mac
+        openedWiimotes.add(mac)
         
     def close(self):
         if self.listening:
@@ -199,9 +201,9 @@ class Wiimote:
             self.listening = False
             
         self.opened = False
+        openedWiimotes.discard(self.path)
             
         if USE_HID:
-            openedWiimotes.discard(self.path)
             try:
                 self.handle.close()
             except:
@@ -404,6 +406,8 @@ class Wiimote:
 
         while self.listening:
             data = self.recv(reportSize)
+            if not self.listening:
+                break
             if not data:
                 time.sleep(0.01)
                 continue

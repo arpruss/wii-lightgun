@@ -5,7 +5,7 @@
 import time
 from pydbus import SystemBus
 
-def scan_wiimote_dbus_poll(timeout=10):
+def scan_wiimote_dbus_poll(timeout=10,blacklist=set()):
     bus = SystemBus()
     adapter = bus.get('org.bluez', '/org/bluez/hci0')
     manager = bus.get('org.bluez', '/')
@@ -32,8 +32,9 @@ def scan_wiimote_dbus_poll(timeout=10):
                     
                     if "Nintendo" in name or "RVL" in name:
                         found_mac = dev.get('Address')
-                        print(f"--> Found Wiimote! MAC: {found_mac}")
-                        break
+                        if not found_mac in blacklist:
+                            print(f"--> Found Wiimote! MAC: {found_mac}")
+                            break
             
             if found_mac:
                 break
