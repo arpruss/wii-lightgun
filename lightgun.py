@@ -1,10 +1,5 @@
 #!/usr/bin/python3
-USE_HIDAPI_OR_SOCKET = True
-if USE_HIDAPI_OR_SOCKET:
-    import wiimote_hidapi as wiimote
-    wiimote.MyWiimote = wiimote.Wiimote
-else:
-    import wiimote
+import wiimote
 import myinput
 import time
 import math
@@ -176,16 +171,16 @@ class Config():
             pass
 
     def haveCenter(self,wm):
-        return getAddress(wm) in self.center
+        return wm.id in self.center
 
     def setLEDLocations(self,loc,size=(1.,1.)):
         self.ledLocations = [[loc[i][0]/size[0],loc[i][1]/size[1]] for i in range(4)]
             
     def getCenter(self,wm):
-        return self.center.get(getAddress(wm), (1024/2.,768/2.))
+        return self.center.get(wm.id, (1024/2.,768/2.))
         
     def setCenter(self,wm,c):
-        self.center[getAddress(wm)] = c
+        self.center[wm.id] = c
         
     def saveCalibration(self):
         with open(CALIBRATION_FILE, "w") as f:
@@ -352,12 +347,6 @@ def minimize(f,a,b,n=4):
     else:
         return fb,b
 
-def getAddress(wm):        
-    try:
-        return wm.address
-    except:
-        return "unknown"
-        
 def getButtons(state):
     b = state['buttons']
     if 'nunchuk' in state:
@@ -478,11 +467,7 @@ def showPoints(ir,irQuad):
             pygame.draw.rect(surface, WHITE, (x-size*PXSCALE/2, y-size*PXSCALE/2, size*PXSCALE, size*PXSCALE))
     
 def getPoint(p):
-    try:
-        xy = (p[0][0],p[0][1])
-    except:
-        xy = (p['pos'][0],p['pos'][1])
-    xy = calibrationHomography.apply(xy)
+    xy = calibrationHomography.apply((p[0][0],p[0][1]))
     return (xy[0]-CENTER_X)/768., (xy[1]-CENTER_Y)/768.
     
 def getSize(p):
@@ -493,26 +478,8 @@ def getSize(p):
     
 def updateAcceleration(state):
     global lastAngle,lastAccel,lastAccelTime
-    
-    if "acc_calib" in state:
-        a = list(state["acc_calib"])
-    else:    
-        accel = state["acc"]
-        ca = None   
-        if hasattr(wm, 'accel0gCalibration'):
-            ca = wm.accel0gCalibration
-        if ca == None:
-            ca = [512,512,512]
-        
-        a = (accel[0]-ca[0],accel[1]-ca[1],accel[2]-ca[2])
-        
-        ga = None
-        if hasattr(wm, 'accel1gCalibration'):
-            ga = [wm.accel1gCalibration[i]-ca[i] for i in range(3)]
-        if ga == None:
-            ga = [104,104,104]
-            
-        a = [a[0]/ga[0],a[1]/ga[1],a[2]/ga[2]]
+
+    a = list(state.get("acc_calib",(0.,0.,1.)))
     
     mag = math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2])
         
@@ -861,7 +828,7 @@ def measure(flexible=False,screenWidth=1.):
         checkQuitAndKeys()
         surface.fill(DARK_GREEN)
         updateAcceleration(wm.state)
-        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
+        ir = wm.state.get("ir", [None,None,None,None])
         irQuad = getIRQuad(ir)
         
         showPoints(ir,irQuad)
@@ -995,18 +962,6 @@ def computeLEDs(calibrationData,flexible):
         
     return leds
 
-def getRawAccel(state):
-    acc = state['acc']
-    x = 4*acc[0]
-    y = 4*acc[1]
-    z = 4*acc[2]
-    # pull extra precision from the buttons on custom build of library
-    buttons = state['buttons']
-    x += 3&(buttons >> 13)
-    y += 2&(buttons >> 4)
-    z += 2&(buttons >> 5)
-    return x,y,z
-
 def calibrate(flexible=False):
     global CALIBRATION_CORNERS,running,surface
 
@@ -1035,7 +990,7 @@ def calibrate(flexible=False):
 
     while running:
         wiimoteWait(0.25)
-        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
+        ir = wm.state.get("ir", [None,None,None,None])
         buttons = getButtons(wm.state)
         newButtons = buttons & ~prevButtons
         prevButtons = buttons
@@ -1110,7 +1065,7 @@ def center():
             index = 1
         else:
             break
-        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
+        ir = wm.state.get("ir",[None,None,None,None])
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
         #print(lastAngle, (1-index*2)*math.pi/2)
@@ -1153,7 +1108,7 @@ def demo():
         surface.fill(BLACK)
         drawText("Press HOME to exit")
         buttons = getButtons(wm.state)
-        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
+        ir = wm.state.get("ir",[None,None,None,None])
         checkQuitAndKeys()
         updateAcceleration(wm.state)
         irQuad = getIRQuad(ir)
@@ -1252,7 +1207,7 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                         prevNunchukX, prevNunchukY = x,y
 
                     if not horizontal:
-                        ir = wm.state['ir'] if 'ir' in wm.state else wm.state['ir_src']
+                        ir = wm.state.get("ir",[None,None,None,None])
                         irQuad = getIRQuad(ir)
                         if irQuad:
                             xy = CONFIG.pointerPosition(irQuad)
@@ -1289,8 +1244,8 @@ def connect(backgroundTimeout=0,silent=False):
     while True:
         try:
             print("Attempting to connect to Wii Remote")
-            wm = wiimote.MyWiimote(connectCallback=connectMessage if not silent else None)
-            print("ID: ",getAddress(wm))
+            wm = wiimote.Wiimote(connectCallback=connectMessage if not silent else None)
+            print("ID:",wm.id)
             if USE_CALIBRATION_HOMOGRAPHY and hasattr(wm,'irCalibration'):
                 calibrationHomography = Homography(wm.irCalibration,DEFAULT_IR_CALIBRATION)
                 CENTER_X = 512
@@ -1410,7 +1365,7 @@ if __name__ == '__main__':
             sys.exit(1)
         if args.center:
             try:
-                del calibrationFileData[getAddress(wm)]
+                del calibrationFileData[wm.id]
             except KeyError:
                 pass
         if not args.calibrate:

@@ -1,4 +1,5 @@
 # AI slop. 
+from wiimote_constants import *
 import ctypes
 from ctypes import wintypes
 import multiprocessing
@@ -375,7 +376,6 @@ def remove_device_with_timeout(
 
         if elapsed >= timeout:
 
-            print()
             print(
                 f"ERROR: BluetoothRemoveDevice() "
                 f"exceeded {timeout} seconds."
@@ -436,7 +436,6 @@ def clean_stale_wiimotes(hRadio):
     slow BluetoothRemoveDevice() operation runs.
     """
 
-    print()
     print("Checking for remembered Wii Remote records...")
 
     devices = enumerate_devices(
@@ -750,12 +749,11 @@ def pair_wiimote(
         return False
 
     try:
-        connectCallback("Cleaning stale records")
+        connectCallback(CONNECT_CLEANING)
 
-        if not clean_stale_wiimotes(hRadio):
-            connectCallback("Cleaning stale records failed")
+        clean_stale_wiimotes(hRadio)
 
-        connectCallback("Press 1+2 on Wii Remote")
+        connectCallback(CONNECT_PRESS_12)
         device = find_wiimote(hRadio,timeout=timeout)
 
         if device is None:
