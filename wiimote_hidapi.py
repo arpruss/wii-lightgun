@@ -153,12 +153,14 @@ class Wiimote:
         self.irCalibration = [(127,93),(896,93),(896,674),(127,674)]
         self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC#|RPT_EXT
         self.mesg_callback = lambda data,t: None
+        self._rumble = 0
         
         if USE_HID:
             self.initHID(connectTimeout=connectTimeout+5)
         else:
             self.connectCallback("Press 1+2 on Wii Remote")
             self.initSocket()
+        self.rumble = False
         self.led = 0x60
         self.send((0x12,0x04,0x30))
         if not self.calibrate():
@@ -263,6 +265,15 @@ class Wiimote:
             self.handle.write(bytes(out))
         else:
             self.s_interrupt.send(bytes((0xA2,)) + bytes(out))
+            
+    @property
+    def rumble(self):
+        return self._rumble != 0
+        
+    @rumble.setter
+    def rumble(self, x):
+        self._rumble = 1 if x else 0
+        self.send((0x10,self._rumble))
          
     @property
     def led(self):
@@ -270,7 +281,7 @@ class Wiimote:
     
     @led.setter
     def led(self, l):
-        self.send((0x11,l))
+        self.send((0x11,l | self._rumble))
         self._leds = l
         
     def read_sync(self,location,address,size):
@@ -456,10 +467,20 @@ if __name__=='__main__':
     print(w.irCalibration)
     print(w.accel0gCalibration)
     print(w.accel1gCalibration)
-#    w.mesg_callback = lambda data,t: print(data)
-    print("enabling")
+    prevButtons = 0
+    def callback(data,t):
+        global prevButtons
+        print(data)
+        if (data['buttons'] & ~prevButtons) & BTN_A:
+            w.rumble = True
+        if (prevButtons & ~data['buttons']) & BTN_A:
+            w.rumble = False
+        prevButtons = data['buttons']            
+        
+    w.mesg_callback = callback#lambda data,t: print(data)
     w.rpt_mode=RPT_IR|RPT_EXT
     w.enable(mode=RPT_IR|RPT_EXT)
+    print("running")
     while True:
         time.sleep(1)
         pass
