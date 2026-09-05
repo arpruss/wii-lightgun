@@ -5,14 +5,14 @@ import hashlib
 import time
 from wiimote_constants import *
 from threading import Thread
-from windows_get_address import get_mac_from_hid_path
 
 if os.name == 'nt':
     USE_HID = True
-    from windows_wiipair import pair_wiimote
+    from windows.wiipair import pair_wiimote
+    from windows.get_address import get_mac_from_hid_path
 else:
-    from linux_wiimote_scan import scan_wiimote_dbus_poll
     USE_HID = ALWAYS_HIDAPI 
+    from linux.wiimote_scan import scan_wiimote_dbus_poll
 
 if USE_HID:
     import hid
