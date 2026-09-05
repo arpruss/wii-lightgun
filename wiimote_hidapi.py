@@ -14,12 +14,12 @@ if os.name == 'nt':
         #import windows.wiipair as wiipair
         from windows.wiipair import pair_wiimote
 else:
+    import linux.wiimote_scan as wiimote_scan
     USE_HID = ALWAYS_HIDAPI 
 
 if USE_HID:
     import hid
 else:
-    import linux.wiimote_scan as wiimote_scan
     import socket
 
 openedWiimotes = set()
@@ -221,6 +221,7 @@ class Wiimote:
     def openWiimote(self):
         for dev in hid.enumerate():
             if dev['vendor_id'] == WIIMOTE_VID and dev['product_id'] in WIIMOTE_PIDS:
+                print(dev)
                 handle = hid.device()
                 path = dev['path']
                 if path in openedWiimotes:
@@ -253,7 +254,9 @@ class Wiimote:
         if not self.handle:
             if os.name == "nt":
                 pair_wiimote(timeout=connectTimeout,connectCallback=self.connectCallback)
-                #WiiPair(connectTimeout=connectTimeout)
+            else:
+                #wiimote_scan.scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
+                pass
             t = time.monotonic()
             while not self.handle and time.monotonic() < t + self.timeout:
                 self.handle = self.openWiimote()
@@ -493,7 +496,7 @@ class Wiimote:
         return False
 
 if __name__=='__main__':
-    w = Wiimote()
+    w = Wiimote(connectCallback=print)
     print(w.irCalibration)
     print(w.accel0gCalibration)
     print(w.accel1gCalibration)

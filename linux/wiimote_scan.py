@@ -10,18 +10,16 @@ def scan_wiimote_dbus_poll(timeout=10,blacklist=set()):
     adapter = bus.get('org.bluez', '/org/bluez/hci0')
     manager = bus.get('org.bluez', '/')
 
-    print("Press 1 + 2 on your Wiimote now...")
-    
     try:
         adapter.StartDiscovery()
     except Exception:
         pass  # Discovery might already be active
 
-    start_time = time.time()
+    start_time = time.monotonic()
     found_mac = None
 
     try:
-        while time.time() - start_time < timeout:
+        while time.monotonic() - start_time < timeout:
             # Check all active devices known to BlueZ
             objects = manager.GetManagedObjects()
             
