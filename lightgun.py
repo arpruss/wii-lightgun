@@ -72,6 +72,7 @@ UNIT_SQUARE = ((0,0), (1,0), (1,1), (0,1))
 lastAngle = math.pi / 2
 lastAccel = [0,0,1]
 lastAccelTime = -1
+lastQuad = None
     
 
 # For moderate angles, the simple y correction (sightline parallax) is about half a pixel
@@ -693,6 +694,11 @@ def points3To4(points):
 
     return out
     
+def dist2DSquared(xy1,xy2):
+    dx = xy1[0]-xy2[0]
+    dy = xy1[1]-xy2[1]
+    return dx*dx+dy*dy
+    
 def getIRQuad(ir):
     global lastQuad
 
@@ -712,41 +718,69 @@ def getIRQuad(ir):
         identified = identifyPoints(points)
         if count == 2 or count == 3:
             if 0 in identified and 1 in identified:
-                return [points[identified.index(0)],points[identified.index(1)],None,None]
+                lastQuad = [points[identified.index(0)],points[identified.index(1)],None,None]
             elif 2 in identified and 3 in identified:
-                return [points[identified.index(2)],points[identified.index(3)],None,None]
+                lastQuad = [points[identified.index(2)],points[identified.index(3)],None,None]
             else:
-                return None
+                lastQuad = None
         elif count == 4:
             if CONFIG.ledLocations[0][1] < .5:
                 # LEDs are on bottom
-                return [points[identified.index(0)],points[identified.index(1)],None,None]
+                lastQuad = [points[identified.index(0)],points[identified.index(1)],None,None]
             else:
                 # or on top
-                return [points[identified.index(3)],points[identified.index(2)],None,None]
-        
-    if count == 2 or (count == 3 and not USE_P3P):
+                lastQuad = [points[identified.index(3)],points[identified.index(2)],None,None]
+        else:
+            lastQuad = none # should not happen
+    elif count == 2 or (count == 3 and not USE_P3P):
         identified = identifyPoints(points)
         if 0 in identified and 1 in identified:
-            return [points[identified.index(0)],points[identified.index(1)],None,None]
+            p0 = points[identified.index(0)]
+            p1 = points[identified.index(1)]
+            if not lastQuad or not lastQuad[2] or not lastQuad[3]:
+                lastQuad = [p0,p1,None,None]
+            else:
+                if not lastQuad[0] or not lastQuad[1]:
+                    lastQuad = [None,None,p1,p0]
+                else:
+                    dCurrent = dist2DSquared(p0,lastQuad[0])+dist2DSquared(p1,lastQuad[1])
+                    dRev = dist2DSquared(p0,lastQuad[3])+dist2DSquared(p1,lastQuad[2])
+                    if dCurrent > 1.25*dRev:
+                        lastQuad = [None,None,p1,p0]
+                    else:
+                        lastQuad = [p0,p1,None,None]
         elif 2 in identified and 3 in identified:
-            return [None,None,points[identified.index(2)],points[identified.index(3)]]
+            p2 = points[identified.index(2)]
+            p3 = points[identified.index(3)]
+            if not lastQuad or not lastQuad[0] or not lastQuad[1]:
+                lastQuad = [None,None,p2,p3]
+            else:
+                if not lastQuad[2] or not lastQuad[3]:
+                    lastQuad = [p3,p2,None,None]
+                else:
+                    dCurrent = dist2DSquared(p2,lastQuad[2])+dist2DSquared(p3,lastQuad[3])
+                    dRev = dist2DSquared(p2,lastQuad[1])+dist2DSquared(p3,lastQuad[0])
+                    if dCurrent > 1.25*dRev:
+                        lastQuad = [p3,p2,None,None]
+                    else:
+                        lastQuad = [None,None,p2,p3]
         else:
-            return None
-    if count !=3 and count != 4:
-        return None
-    if count == 3: # USE_P3P
+            lastQuad = None
+    elif count !=3 and count != 4:
+        lastQuad = None
+    elif count == 3: # USE_P3P
         points = points3To4(points)
         if points is None:
-            return None
-        lastQuad = points
-        return points
+            lastQuad = None
+        else:
+            lastQuad = points
     else:
         identified = identifyPoints(points)
         if None in identified:
-            return None
-        lastQuad =[points[identified.index(i)] for i in range(4)]
-        return lastQuad
+            lastQuad = None
+        else:
+            lastQuad = [points[identified.index(i)] for i in range(4)]
+    return lastQuad
     
 def getDisplaySize():
     info = pygame.display.Info()
