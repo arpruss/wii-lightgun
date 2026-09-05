@@ -110,7 +110,7 @@ class Wiimote:
         if USE_HID:
             self.initHID(connectTimeout=connectTimeout+5)
         else:
-            self.connectCallback(CONNECT_PAIR_12)
+            self.connectCallback(CONNECT_PRESS_12)
             self.initSocket()
         
         self.opened = True
