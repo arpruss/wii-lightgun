@@ -22,6 +22,8 @@ else:
     import linux.wiimote_scan as wiimote_scan
     import socket
 
+openedWiimotes = set()
+
 WIIUSE = False
 WIIMOTE_VID = 0x057e
 WIIMOTE_PIDS = [0x0306, 0x0330]
@@ -199,6 +201,7 @@ class Wiimote:
         self.opened = False
             
         if USE_HID:
+            openedWiimotes.discard(self.path)
             try:
                 self.handle.close()
             except:
@@ -217,8 +220,11 @@ class Wiimote:
         for dev in hid.enumerate():
             if dev['vendor_id'] == WIIMOTE_VID and dev['product_id'] in WIIMOTE_PIDS:
                 handle = hid.device()
+                path = dev['path']
+                if path in openedWiimotes:
+                    continue
                 try:
-                    handle.open_path(dev['path'])
+                    handle.open_path(path)
                 except:
                     continue
                 try:
@@ -229,7 +235,10 @@ class Wiimote:
                     data = handle.read(32, timeout_ms=500)
                     if not data:
                         raise IOError()
-                    print(f"Found Wiimote at: {dev['path']}")
+                    print(f"Found Wiimote at: {path}")
+                    self.path = path
+                    openedWiimotes.add(path)
+                    
                     return handle
                 except:
                     handle.close()
@@ -251,8 +260,6 @@ class Wiimote:
             if not self.handle:
                 print("Failed to connect")
                 raise RuntimeError()
-
-        self.handle.set_nonblocking(False)
         
     def recv(self,size):
         if not self.opened:
