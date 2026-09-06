@@ -316,17 +316,64 @@ class Wiimote:
         for i in range(3):
             d = self.read_sync(RW_REG, 0xa400fe, 2)
             if d is not None:
-                if len(d) >= 2 and getWord(d,0) == 0x0000:
-                    return EXT_NUNCHUK
+                if len(d) >= 2:
+                    id = getWord(d,0)
+                    if id == 0x0000:
+                        return EXT_NUNCHUK
+                    elif id == 0x0402:
+                        return EXT_BALANCE_BOARD
                 else:
                     return EXT_NONE
             time.sleep(0.1)
         return EXT_NONE
+        
+    def balanceBoardCalibrate(self,data,refTemp):
+        self.bbCalibration = {}
+        def calib(offset):
+            return { 0: getWord(data,offset), 17: getWord(data,offset+0x8), 34: getWord(data,offset+0x10) }
+        self.bbCalibration["top_right"] = calib(0x04)
+        self.bbCalibration["bottom_right"] = calib(0x06)
+        self.bbCalibration["top_left"] = calib(0x08)
+        self.bbCalibration["bottom_left"] = calib(0x0A)
+        self.bbCalibration["ref_temp"] = refTemp[0] & 0xFF
+        
+    def balanceBoardCompute(self,bb):
+        raw = bb["weight_raw"]
+        total = 0
+        c = {}
+        for index in ("top_right","bottom_right","top_left","bottom_left"):
+            r = raw[index]
+            if r >= self.bbCalibration[index][17]:
+                t = (r-self.bbCalibration[index][17])/(self.bbCalibration[index][34]-self.bbCalibration[index][17])
+                x = (1-t) * 17 + t * 34
+            else:
+                t = (r-self.bbCalibration[index][0])/(self.bbCalibration[index][17]-self.bbCalibration[index][0])
+                x = t * 17
+            total += x
+            c[index] = x
+        bb["weight_calib"] = c
+        bb["weight_total"] = 0.999 * total * (1.0 - .0007 * (bb["temp"] - self.bbCalibration["ref_temp"]))
     
     def listen(self,irLevel):
-
+        if self.rpt_mode & RPT_EXT:
+            extType = self.enableExt()
+        else:
+            extType = EXT_NONE
         # enable camera in extended data mode
-        if not (self.rpt_mode & RPT_EXT):
+        if extType == EXT_BALANCE_BOARD:
+            reportMode = 0x34
+            reportSize = 22
+            self.rpt_mode = RPT_EXT | RPT_BTN
+            calibration = self.read_sync(RW_REG, 0xa40020, 32)
+            if calibration is None:
+                self.bbCalibration = None
+            else:
+                refTemp = self.read_sync(RW_REG, 0xa40060, 1)
+                if refTemp is None:
+                    self.bbCalibration = None
+                else:
+                    self.balanceBoardCalibrate(calibration, refTemp)
+        elif not (self.rpt_mode & RPT_EXT):
             reportMode = 0x33
             reportSize = 18
             irMode = 3 # extended
@@ -334,10 +381,6 @@ class Wiimote:
             reportMode = 0x37
             reportSize = 22
             irMode = 1 # basic
-        if self.rpt_mode & RPT_EXT:
-            extType = self.enableExt()
-        else:
-            extType = EXT_NONE
             
         if self.rpt_mode & RPT_IR:
             self.send(bytes((0x13, 0x04)))
@@ -376,56 +419,72 @@ class Wiimote:
                 else:
                     extType = EXT_NONE
                 self.send(bytes((0x12, 0x04, reportMode)))
-            if (data[0] == 0x33 and len(data) >= 18) or (data[0] == 0x37 and len(data) >= 22):
+            if (data[0] == 0x33 and len(data) >= 18) or (data[0] == 0x37 and len(data) >= 22) or (data[0] == 0x34 and len(data) >= 22):
                 t = time.monotonic()
                 buttons = getWord(data,1)
                 out = {"buttons": buttons & 0x1F9F}
                 x = (0xFF & data[3]) << 2 | (3&(buttons >> 13))
                 y = (0xFF & data[4]) << 2 | (2&(buttons >> 4))
                 z = (0xFF & data[5]) << 2 | (2&(buttons >> 5))
-                out["acc_raw"] = (x,y,z)
-                out["acc_calib"] = ( (x-self.accel0gCalibration[0])/(self.accel1gCalibration[0]-self.accel0gCalibration[0]),
-                               (y-self.accel0gCalibration[1])/(self.accel1gCalibration[1]-self.accel0gCalibration[1]),
-                               (z-self.accel0gCalibration[2])/(self.accel1gCalibration[2]-self.accel0gCalibration[2]) )
-                offset = 6
-                irData = []
-                if data[0] == 0x33:
-                    for i in range(4):
-                        y = (data[offset+1]&0xFF) | ((data[offset+2]&0xC0)>>6) << 8
-                        if y < 1023:
-                            x = (data[offset]&0xFF) | ((data[offset+2]&0x30)>>4) << 8
-                            s = data[offset+2] & 0xF
-                            irData.append(((x,y),s))
-                        else:
-                            irData.append(None)
-                        offset += 3
-                    out["ir"] = irData
-                elif data[0] == 0x37:
-                    for i in range(2):
-                        y = (data[offset+1]&0xFF) | ((data[offset+2]&0xC0)>>6) << 8
-                        if y < 1023:
-                            x = (data[offset]&0xFF) | ((data[offset+2]&0x30)>>4) << 8
-                            irData.append(((x,y),1))
-                        else:
-                            irData.append(None)
-                        y = (data[offset+4]&0xFF) | ((data[offset+2]&0xC)>>2) << 8
-                        if y < 1023:
-                            x = (data[offset+3]&0xFF) | (data[offset+2]&0x3) << 8
-                            irData.append(((x,y),1))
-                        else:
-                            irData.append(None)
-                        offset += 5
-                    out["ir"] = irData
-                    if extType == EXT_NUNCHUK:
-                        nunchuk = {}
-                        nunchuk["buttons"] = ~data[offset+5] & 0x3                       
-                        if any(x & 0xFF != 0xFF for x in data[offset:]):
-                            x = (0xFF & data[offset+2]) << 2 | (3&(data[offset+5] >> 2))
-                            y = (0xFF & data[offset+3]) << 2 | (3&(data[offset+5] >> 4))
-                            z = (0xFF & data[offset+4]) << 2 | (3&(data[offset+5] >> 6))
-                            nunchuk["acc_raw"] = (x,y,z)
-                            nunchuk["stick"] = (data[offset]&0xFF,data[offset]&0xFF)
-                            out["nunchuk"] = nunchuk
+                
+                if data[0] == 0x34:
+                    offset = 3
+                    if extType == EXT_BALANCE_BOARD:
+                        balance_board = {}
+                        raw = {}
+                        raw["top_right"] = getWord(data,offset)
+                        raw["bottom_right"] = getWord(data,offset+2)
+                        raw["top_left"] = getWord(data,offset+4)
+                        raw["bottom_left"] = getWord(data,offset+6)
+                        balance_board["weight_raw"] = raw
+                        balance_board["temp"] = data[offset+8] & 0xFF
+                        if self.bbCalibration:
+                            self.balanceBoardCompute(balance_board)
+                        out["balance_board"] = balance_board
+                else:
+                    out["acc_raw"] = (x,y,z)
+                    out["acc_calib"] = ( (x-self.accel0gCalibration[0])/(self.accel1gCalibration[0]-self.accel0gCalibration[0]),
+                                   (y-self.accel0gCalibration[1])/(self.accel1gCalibration[1]-self.accel0gCalibration[1]),
+                                   (z-self.accel0gCalibration[2])/(self.accel1gCalibration[2]-self.accel0gCalibration[2]) )
+                    offset = 6
+                    irData = []
+                    if data[0] == 0x33:
+                        for i in range(4):
+                            y = (data[offset+1]&0xFF) | ((data[offset+2]&0xC0)>>6) << 8
+                            if y < 1023:
+                                x = (data[offset]&0xFF) | ((data[offset+2]&0x30)>>4) << 8
+                                s = data[offset+2] & 0xF
+                                irData.append(((x,y),s))
+                            else:
+                                irData.append(None)
+                            offset += 3
+                        out["ir"] = irData
+                    elif data[0] == 0x37:
+                        for i in range(2):
+                            y = (data[offset+1]&0xFF) | ((data[offset+2]&0xC0)>>6) << 8
+                            if y < 1023:
+                                x = (data[offset]&0xFF) | ((data[offset+2]&0x30)>>4) << 8
+                                irData.append(((x,y),1))
+                            else:
+                                irData.append(None)
+                            y = (data[offset+4]&0xFF) | ((data[offset+2]&0xC)>>2) << 8
+                            if y < 1023:
+                                x = (data[offset+3]&0xFF) | (data[offset+2]&0x3) << 8
+                                irData.append(((x,y),1))
+                            else:
+                                irData.append(None)
+                            offset += 5
+                        out["ir"] = irData
+                        if extType == EXT_NUNCHUK:
+                            nunchuk = {}
+                            nunchuk["buttons"] = ~data[offset+5] & 0x3                       
+                            if any(x & 0xFF != 0xFF for x in data[offset:]):
+                                x = (0xFF & data[offset+2]) << 2 | (3&(data[offset+5] >> 2))
+                                y = (0xFF & data[offset+3]) << 2 | (3&(data[offset+5] >> 4))
+                                z = (0xFF & data[offset+4]) << 2 | (3&(data[offset+5] >> 6))
+                                nunchuk["acc_raw"] = (x,y,z)
+                                nunchuk["stick"] = (data[offset]&0xFF,data[offset]&0xFF)
+                                out["nunchuk"] = nunchuk
 
                 self.state = out
                 self.mesg_callback(out,t)        
