@@ -110,6 +110,7 @@ class Wiimote:
         self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC # |RPT_EXT
         self.mesg_callback = lambda data,t: None
         self.name = None
+        self.prevButtons = 0
         self._rumble = 0
         
         if USE_HID:
@@ -365,7 +366,10 @@ class Wiimote:
             total += x
             c[index] = x
             if (buttons & BTN_A) and self.zeroBalanceBoardOnButton:
-                self.bbZero[index] = .25 * self.bbZero[index] + .75 * x
+                if (self.prevButtons & BTN_A) == 0:
+                    self.bbZero[index] = x
+                else:
+                    self.bbZero[index] = .7 * self.bbZero[index] + .3 * x
         bb["weight_calib"] = c
         bb["weight_total"] = total
     
@@ -497,6 +501,7 @@ class Wiimote:
                                 nunchuk["stick"] = (data[offset]&0xFF,data[offset]&0xFF)
                                 out["nunchuk"] = nunchuk
 
+                self.prevButtons = out["buttons"]
                 self.state = out
                 self.mesg_callback(out,t)        
              
