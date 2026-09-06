@@ -1,4 +1,3 @@
-#
 # AI slop but seems to work
 #
 
@@ -17,6 +16,7 @@ def scan_wiimote_dbus_poll(timeout=10,blacklist=set()):
 
     start_time = time.monotonic()
     found_mac = None
+    found_name = None
 
     try:
         while time.monotonic() - start_time < timeout:
@@ -31,6 +31,7 @@ def scan_wiimote_dbus_poll(timeout=10,blacklist=set()):
                     if "Nintendo" in name or "RVL" in name:
                         found_mac = dev.get('Address')
                         if not found_mac in blacklist:
+                            found_name = name
                             print(f"--> Found Wiimote! MAC: {found_mac}")
                             break
             
@@ -45,7 +46,7 @@ def scan_wiimote_dbus_poll(timeout=10,blacklist=set()):
         except Exception:
             pass
 
-    return found_mac
+    return found_mac,name
 
 if __name__ == "__main__":
     mac = scan_wiimote_dbus_poll(timeout=10)

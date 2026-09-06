@@ -106,6 +106,7 @@ class Wiimote:
         self.irCalibration = [(127,93),(896,93),(896,674),(127,674)]
         self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC#|RPT_EXT
         self.mesg_callback = lambda data,t: None
+        self.name = None
         self._rumble = 0
         
         if USE_HID:
@@ -124,7 +125,7 @@ class Wiimote:
         self.led = 0xF0-0x60
         
     def initSocket(self):
-        mac = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
+        mac,name = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
         if not mac:
             raise RuntimeError()
         self.s_control = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
