@@ -23,6 +23,8 @@ openedWiimotes = set()
 
 WIIUSE = False
 
+BALANCE_BOARD_CORNERS = ("top_right","bottom_right","top_left","bottom_left")
+
 IR_CALIBRATION_LOCATIONS = ( ((0,2,4),(1,2,6)),  # X1,Y1
                              ((3,2,0),(4,2,2)),  # X2,Y2
                              ((5,7,4),(6,7,6)),  # X3,Y3
@@ -104,6 +106,7 @@ class Wiimote:
         self.accel0gCalibration = (512,512,512)
         self.accel1gCalibration = (616,616,616)
         self.irCalibration = [(127,93),(896,93),(896,674),(127,674)]
+        self.zeroBalanceBoardOnButton = True
         self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC # |RPT_EXT
         self.mesg_callback = lambda data,t: None
         self.name = None
@@ -329,19 +332,28 @@ class Wiimote:
         
     def balanceBoardCalibrate(self,data,refTemp):
         self.bbCalibration = {}
+        self.bbZero = {}
         def calib(offset):
             return { 0: getWord(data,offset), 17: getWord(data,offset+0x8), 34: getWord(data,offset+0x10) }
-        self.bbCalibration["top_right"] = calib(0x04)
-        self.bbCalibration["bottom_right"] = calib(0x06)
-        self.bbCalibration["top_left"] = calib(0x08)
-        self.bbCalibration["bottom_left"] = calib(0x0A)
-        self.bbCalibration["ref_temp"] = refTemp[0] & 0xFF
+        offset = 0x04
+        for c in BALANCE_BOARD_CORNERS:
+            self.bbCalibration[c] = calib(offset)
+            self.bbZero[c] = 0.
+            offset += 2
+        if refTemp:
+            self.bbCalibration["ref_temp"] = refTemp[0] & 0xFF
         
-    def balanceBoardCompute(self,bb):
+    def balanceBoardCompute(self,bb,buttons):
+        if not self.bbCalibration:
+            return
         raw = bb["weight_raw"]
         total = 0
         c = {}
-        for index in ("top_right","bottom_right","top_left","bottom_left"):
+        if "ref_temp" in self.bbCalibration:
+            tempFactor = 0.999 * (1.0 - .0007 * (bb["temp"] - self.bbCalibration["ref_temp"]))
+        else:
+            tempFactor = 1.
+        for index in BALANCE_BOARD_CORNERS:
             r = raw[index]
             if r >= self.bbCalibration[index][17]:
                 t = (r-self.bbCalibration[index][17])/(self.bbCalibration[index][34]-self.bbCalibration[index][17])
@@ -349,10 +361,13 @@ class Wiimote:
             else:
                 t = (r-self.bbCalibration[index][0])/(self.bbCalibration[index][17]-self.bbCalibration[index][0])
                 x = t * 17
+            x = x*tempFactor - self.bbZero[index]
             total += x
             c[index] = x
+            if (buttons & BTN_A) and self.zeroBalanceBoardOnButton:
+                self.bbZero[index] = .25 * self.bbZero[index] + .75 * x
         bb["weight_calib"] = c
-        bb["weight_total"] = 0.999 * total * (1.0 - .0007 * (bb["temp"] - self.bbCalibration["ref_temp"]))
+        bb["weight_total"] = total
     
     def listen(self,irLevel):
         if self.rpt_mode & RPT_EXT:
@@ -369,10 +384,7 @@ class Wiimote:
                 self.bbCalibration = None
             else:
                 refTemp = self.read_sync(RW_REG, 0xa40060, 1)
-                if refTemp is None:
-                    self.bbCalibration = None
-                else:
-                    self.balanceBoardCalibrate(calibration, refTemp)
+                self.balanceBoardCalibrate(calibration, refTemp)
         elif not (self.rpt_mode & RPT_EXT):
             reportMode = 0x33
             reportSize = 18
@@ -438,8 +450,7 @@ class Wiimote:
                         raw["bottom_left"] = getWord(data,offset+6)
                         balance_board["weight_raw"] = raw
                         balance_board["temp"] = data[offset+8] & 0xFF
-                        if self.bbCalibration:
-                            self.balanceBoardCompute(balance_board)
+                        self.balanceBoardCompute(balance_board,out["buttons"])
                         out["balance_board"] = balance_board
                 else:
                     out["acc_raw"] = (x,y,z)

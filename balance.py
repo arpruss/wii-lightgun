@@ -7,13 +7,10 @@ import sys
 
 FRACTION = 0.75
 
-zeroValues = None
 lastValues = None
 calibrate = False
 
 pressed = set()
-
-zeroed = {"top_left":0, "top_right":0, "bottom_left":0, "bottom_right":0}
 
 def press(key,state):
     if bool(state) != (key in pressed):
@@ -24,10 +21,7 @@ def press(key,state):
             controller.release(key)
             pressed.remove(key)
 
-def update(data):
-    values = {}
-    for i in data.keys():
-        values[i] = data[i]-zeroed[i]
+def update(values):
     right = values['top_right']+values['bottom_right']
     #left = values['top_left']+values['bottom_left']
     top = values['top_left']+values['top_right']
@@ -59,15 +53,12 @@ def update(data):
             press(myinput.KEY_LEFT, 0)
 
 def wiimoteCallback(event,t):
-    global zeroed
     if "balance_board" in event:
         bb = event["balance_board"]
     else:
         bb = None
     if event["buttons"] & wiimote.BTN_A:
         press(myinput.KEY_SPACE, 1)
-        if bb and "weight_calib" in bb:
-            zeroed = bb["weight_calib"]
     else:
         press(myinput.KEY_SPACE, 0)
     if bb and "weight_calib" in bb:
