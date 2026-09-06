@@ -104,7 +104,7 @@ class Wiimote:
         self.accel0gCalibration = (512,512,512)
         self.accel1gCalibration = (616,616,616)
         self.irCalibration = [(127,93),(896,93),(896,674),(127,674)]
-        self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC#|RPT_EXT
+        self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC # |RPT_EXT
         self.mesg_callback = lambda data,t: None
         self.name = None
         self._rumble = 0
