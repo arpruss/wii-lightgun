@@ -101,8 +101,8 @@ class Wiimote:
         self.connectTimeout = connectTimeout
         self.id = None
         self.state = { 'buttons': 0, 'acc_raw': [512,512,616], 'acc_calib': [0.,0.,1.], 'ir': [None,None,None,None] }
-        self.accel0gCalibration = [(512,512,512)]
-        self.accel1gCalibration = [(616,616,616)]
+        self.accel0gCalibration = (512,512,512)
+        self.accel1gCalibration = (616,616,616)
         self.irCalibration = [(127,93),(896,93),(896,674),(127,674)]
         self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC#|RPT_EXT
         self.mesg_callback = lambda data,t: None
@@ -464,7 +464,7 @@ if __name__=='__main__':
             w.rumble = False
         prevButtons = data['buttons']            
         
-    w.mesg_callback = callback#lambda data,t: print(data)
+    w.mesg_callback = print
     w.rpt_mode=RPT_IR|RPT_EXT
     w.enable(mode=RPT_IR|RPT_EXT)
     print("running")
