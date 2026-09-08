@@ -73,7 +73,7 @@ def go(wm):
 
         wm.mesg_callback = wiimoteCallback
 
-        while running:
+        while running:  
             time.sleep(0.25)
 
 def connect():
@@ -94,9 +94,10 @@ def run(command):
     subprocess.run(command, shell=True)
     running = False
 
-thread2 = threading.Thread(target=run, args=(sys.argv[1],))
-thread2.daemon = True
-thread2.start()
+if len(sys.argv)>1:
+    thread2 = threading.Thread(target=run, args=(sys.argv[1],))
+    thread2.daemon = True
+    thread2.start()
 
 running = True
 

@@ -24,6 +24,8 @@ USE_CALIBRATION_HOMOGRAPHY = False
 
 abortConnect = False
 
+# todo: consider P3P for 3 point
+
 CONFIG_DIR = os.sep.join((os.path.expanduser("~"),".wiilightgun"))
 LED_FILE = os.sep.join((os.path.expanduser("~"),".wiilightgun","irledcoordinates"))
 SCREENSHOT_FILE = os.sep.join((os.path.expanduser("~"),".wiilightgun","screenshot"))
@@ -73,7 +75,6 @@ lastAngle = math.pi / 2
 lastAccel = [0,0,1]
 lastAccelTime = -1
 lastQuad = None
-    
 
 # For moderate angles, the simple y correction (sightline parallax) is about half a pixel
 # off and should be a bit faster as it punts more of the computation to cv2. But I haven't
@@ -131,6 +132,7 @@ minusHorizontalMap = (
 class Config():
     def __init__(self):
         self.center = {}
+        self.lastCameraPosition = None
         try:
             with open(CALIBRATION_FILE) as f:
                 for line in f:
@@ -143,9 +145,10 @@ class Config():
             pass
             
         self.aspect = 1920./1080.
+        self.prevPosition = None
         self.ledLocations = None
         self.yCorrection = 0
-        self.ledOffset = 0 # currently only works with USE_P2PA mode
+        self.ledOffset = 0 
         try:
             with open(LED_FILE) as f:
                 s = tuple(map(float,f.readline().strip().split(",")))
@@ -201,33 +204,35 @@ class Config():
                 f.write("aspect %g\n" % self.aspect)
 
             
-    def pointerPosition(self,irQuad):
+    def pointerPosition(self,irQuad): 
         valid = []
         for i in range(4):
             if irQuad[i] is not None:
                 valid.append(i)
         if len(valid) == 2:
             return pointerPosition2LED(irQuad[valid[0]],irQuad[valid[1]],CONFIG.ledLocations[valid[0]],CONFIG.ledLocations[valid[1]],lastAccel if USE_P2PA else None)
-        if len(valid) != 4:
+        elif len(valid) != 4:
             return None
-    
-        h = Homography(irQuad,self.ledLocations)
-        if self.yCorrection: # sightline parallax correction
-            if SIMPLE_Y_CORRECTION:
-                xy = h.apply((0,0))
-                xy2 = h.apply((0.01,0.01)) # shouldn't this be (0,0.01)?
-                dx,dy = (xy2[0]-xy[0])*self.aspect,xy2[1]-xy[1]
-                d = math.hypot(dx,dy)
-                return xy[0]+self.yCorrection*dx/d/self.aspect,xy[1]+self.yCorrection*dy/d
-            else:
-                return h.apply((0,self.yCorrection/h.minimumScalingAtOrigin(self.aspect))) 
         else:
-            return h.apply((0,0))
-
+            if CONFIG.ledOffset != 0:
+                return pointerPosition34(irQuad)
+            h = Homography(irQuad,self.ledLocations)
+            if self.yCorrection: # sightline parallax correction
+                if SIMPLE_Y_CORRECTION:
+                    xy = h.apply((0,0))
+                    xy2 = h.apply((0.01,0.01)) # shouldn't this be (0,0.01)?
+                    dx,dy = (xy2[0]-xy[0])*self.aspect,xy2[1]-xy[1]
+                    d = math.hypot(dx,dy)
+                    return xy[0]+self.yCorrection*dx/d/self.aspect,xy[1]+self.yCorrection*dy/d
+                else:
+                    xy = h.apply((0,self.yCorrection/h.minimumScalingAtOrigin(self.aspect))) 
+                    return xy
+            else:
+                return h.apply((0,0))
             
 class FakeWiimote():
     def __init__(self):
-        self.state = { "acc":(128,128,128), "buttons":0, "ir_src":[], "fake":True }
+        self.state = { "acc_calib":(0.,0.,1.), "buttons":0, "ir":[], "fake":True }
 
 def cosAngle(a,b):
     return math.cos( math.atan2(b[1],b[0])-math.atan2(a[1],a[0]) )
@@ -379,6 +384,7 @@ def wiimoteCallback(events,t):
 INTRINSIC = np.array( ( [FOCAL_LENGTH_PIXELS/768.,0,0.0],
     [0,FOCAL_LENGTH_PIXELS/768.,0.0],
     [0,0,1] ), dtype=np.float64 )
+INTRINSIC_INV = np.linalg.inv(INTRINSIC)    
 
 class Homography:
     def __init__(self,input,output):
@@ -647,14 +653,15 @@ def points3To4(points):
     dest = np.array(points,dtype=np.float64)
     retval, rvecs, tvecs = cv2.solveP3P(source,dest,INTRINSIC,None,cv2.SOLVEPNP_AP3P) # AP3P
 
-    if not rvecs:
+    if not retval:
         return None
 
     bestR2 = math.inf
     missingLED = np.float64((fix(CONFIG.ledLocations[missing]),))
 
+    accel = np.float64((-lastAccel[0],lastAccel[2],lastAccel[1]))
+    
     if lastQuad is None or not P3P_PROXIMITY_PREFERENCE:
-        accel = np.float64((-lastAccel[0],lastAccel[2],lastAccel[1]))
         base = np.float64((0,math.sqrt(accel[0]*accel[0]+accel[1]*accel[1]+accel[2]*accel[2]),0))
         best = None
         bestR2 = None
@@ -693,6 +700,93 @@ def points3To4(points):
             out[i] = points[identified.index(i)]
 
     return out
+    
+def pixel_to_world(pixel_u, pixel_v, R, tvec, K_inv):
+
+    """
+    Unprojects a 2D pixel coordinate (u, v) back to a 3D point in the World Frame,
+    assuming the 3D point lies on the plane Z_world = 0.
+    """
+
+    # 3. Create the pixel coordinate in homogeneous form [u, v, 1]
+    uv_homo = np.array([[pixel_u], [pixel_v], [1.0]])
+    
+    # 4. Transform pixel to a normalized ray direction in the Camera Frame
+    ray_cam = K_inv @ uv_homo
+    
+    # 5. Transform ray direction to World Frame (using R^T)
+    R_inv = R.T
+    ray_world = R_inv @ ray_cam
+    
+    # 6. Calculate the Camera's position in World Coordinates
+    # Pos_world = -R^T * tvec
+    cam_pos_world = -R_inv @ tvec
+    
+    # 7. Intersect the 3D ray with the Z_world = 0 plane
+    # Equation: World_Point = cam_pos_world + s * ray_world
+    # Solving for scale factor 's' when Z_world = 0:
+    s = -cam_pos_world[2, 0] / ray_world[2, 0]
+    
+    # 8. Compute final 3D World Point
+    world_point = cam_pos_world + s * ray_world
+    
+    out = world_point.ravel() # Returns [X, Y, 0.0]    
+    return np.array([out[0],out[1]])
+    
+def pointerPosition34(points):
+    source = []
+    dest = []
+    
+    count = 0
+    for i in range(4):
+        if points[i] is not None:
+            source.append([CONFIG.ledLocations[i][0]*CONFIG.aspect,CONFIG.ledLocations[i][1],CONFIG.ledOffset])
+            dest.append(points[i])
+            count += 1
+    if count < 3:
+        return None
+    source = np.array(source,dtype=np.float64)
+    dest = np.array(dest,dtype=np.float64)
+
+    accel = np.float64((-lastAccel[0],lastAccel[2],lastAccel[1]))
+    
+    if count == 3:
+        retval, rvecs, tvecs = cv2.solveP3P(source,dest,INTRINSIC,None,cv2.SOLVEPNP_AP3P) # AP3P
+        if not retval:
+            return None
+        best = None
+        if CONFIG.lastCameraPosition is None or not P3P_PROXIMITY_PREFERENCE:
+            base = np.float64((0,math.sqrt(accel[0]*accel[0]+accel[1]*accel[1]+accel[2]*accel[2]),0))
+            bestDist = math.inf
+            for i in range(len(rvecs)):
+                if not np.isnan(tvecs[i][0]):
+                    R = cv2.Rodrigues(rvecs[i])[0]
+                    vert = R[:,1].reshape(1,3)
+                    d = np.linalg.norm(accel-vert)
+                    if d < bestDist:
+                        best = i
+                        bestD = d
+        else:
+            bestDist = math.inf
+            for i in range(len(tvecs)):
+                if not np.isnan(tvecs[i][0]):
+                    d = np.linalg.norm(tvecs[i]-CONFIG.lastCameraPosition) 
+                    if d < bestDist:
+                        d = bestDist
+                        best = i
+        if best is None:
+            return None
+        rvec = rvecs[best]
+        tvec = tvecs[best]
+    else:
+        retval, rvec, tvec = cv2.solvePnP(source,dest,INTRINSIC,None,cv2.SOLVEPNP_AP3P) # AP3P
+        if not retval:
+            return None
+    
+    R,_ = cv2.Rodrigues(rvec)
+    vert = R[:,1].reshape(3,1) # -CONFIG.yCorrection * vert
+    out = pixel_to_world(0.,0.,R,tvec-CONFIG.yCorrection,INTRINSIC_INV)
+    return out[0]/CONFIG.aspect,out[1]
     
 def dist2DSquared(xy1,xy2):
     dx = xy1[0]-xy2[0]
