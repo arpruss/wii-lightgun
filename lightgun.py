@@ -210,11 +210,11 @@ class Config():
             if irQuad[i] is not None:
                 valid.append(i)
         if len(valid) == 2:
-            return pointerPosition2LED(irQuad[valid[0]],irQuad[valid[1]],CONFIG.ledLocations[valid[0]],CONFIG.ledLocations[valid[1]],lastAccel if USE_P2PA else None)
+            return pointerPosition2LED(irQuad[valid[0]],irQuad[valid[1]],self.ledLocations[valid[0]],self.ledLocations[valid[1]],lastAccel if USE_P2PA else None)
         elif len(valid) != 4:
             return None
         else:
-            if CONFIG.ledOffset != 0:
+            if self.ledOffset != 0:
                 return pointerPosition34(irQuad)
             h = Homography(irQuad,self.ledLocations)
             if self.yCorrection: # sightline parallax correction
