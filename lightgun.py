@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+_#!/usr/bin/python3
 import wiimote
 import myinput
 import time
@@ -25,7 +25,7 @@ USE_CALIBRATION_HOMOGRAPHY = False
 abortConnect = False
 
 # todo: consider P3P for 3 point
-
+_
 CONFIG_DIR = os.sep.join((os.path.expanduser("~"),".wiilightgun"))
 LED_FILE = os.sep.join((os.path.expanduser("~"),".wiilightgun","irledcoordinates"))
 SCREENSHOT_FILE = os.sep.join((os.path.expanduser("~"),".wiilightgun","screenshot"))
@@ -711,7 +711,7 @@ def pixel_to_world(pixel_u, pixel_v, R, tvec, K_inv):
     # 3. Create the pixel coordinate in homogeneous form [u, v, 1]
     uv_homo = np.array([[pixel_u], [pixel_v], [1.0]])
     
-    # 4. Transform pixel to a normalized ray direction in the Camera Frame
+    # 4. Transform pixel to a ray direction in the Camera Frame
     ray_cam = K_inv @ uv_homo
     
     # 5. Transform ray direction to World Frame (using R^T)
@@ -719,7 +719,6 @@ def pixel_to_world(pixel_u, pixel_v, R, tvec, K_inv):
     ray_world = R_inv @ ray_cam
     
     # 6. Calculate the Camera's position in World Coordinates
-    # Pos_world = -R^T * tvec
     cam_pos_world = -R_inv @ tvec
     
     # 7. Intersect the 3D ray with the Z_world = 0 plane
@@ -784,7 +783,7 @@ def pointerPosition34(points):
             return None
     
     R,_ = cv2.Rodrigues(rvec)
-    vert = R[:,1].reshape(3,1) # -CONFIG.yCorrection * vert
+    vert = R[:,1].reshape(3,1)
     out = pixel_to_world(0.,0.,R,tvec-CONFIG.yCorrection,INTRINSIC_INV)
     return out[0]/CONFIG.aspect,out[1]
     
