@@ -274,7 +274,11 @@ def computeP2PA(m1,m2,cos_beta,rho1,rho2):
         return (dj,di,hj,hi)
 
 def n(v):
-    return np.array(v) / np.linalg.norm(v)
+    norm = np.linalg.norm(v)
+    if norm != 0:
+        np.array(v) / np.linalg.norm(v)
+    else:
+        return np.array( (0.,0.,0.) )
     
 def cross2D(p,q):
     return p[0]*q[1]-p[1]*q[0]
@@ -659,21 +663,19 @@ def points3To4(points):
     bestR2 = math.inf
     missingLED = np.float64((fix(CONFIG.ledLocations[missing]),))
 
-    accel = np.float64((-lastAccel[0],lastAccel[2],lastAccel[1]))
+    accel = n(np.float64((-lastAccel[0],lastAccel[2],lastAccel[1])))
     
     if lastQuad is None or not P3P_PROXIMITY_PREFERENCE:
-        base = np.float64((0,math.sqrt(accel[0]*accel[0]+accel[1]*accel[1]+accel[2]*accel[2]),0))
         best = None
-        bestR2 = None
+        bestDist = math.inf
         for i in range(len(rvecs)):
             if not np.isnan(tvecs[i][0]):
-                #rotationMatrix = np.linalg.inv(cv2.Rodrigues(rvecs[i])[0])
-                rotationMatrix = cv2.Rodrigues(rvecs[i])[0]
-                delta = rotationMatrix.dot(base) - accel
-                r2 = delta[0]*delta[0]+delta[1]*delta[1]+delta[2]*delta[2]
-                if best is None or r2 < bestR2:
+                R = cv2.Rodrigues(rvecs[i])[0]
+                vert = R[:,1].reshape(1,3)
+                d = np.linalg.norm(accel-vert)
+                if d < bestDist:
                     best = i
-                    bestR2 = r2
+                    bestD = d
 
         if best is None:
             return None
@@ -747,7 +749,7 @@ def pointerPosition34(points):
     source = np.array(source,dtype=np.float64)
     dest = np.array(dest,dtype=np.float64)
 
-    accel = np.float64((-lastAccel[0],lastAccel[2],lastAccel[1]))
+    accel = n(np.float64((-lastAccel[0],lastAccel[2],lastAccel[1])))
     
     if count == 3:
         retval, rvecs, tvecs = cv2.solveP3P(source,dest,INTRINSIC,None,cv2.SOLVEPNP_AP3P) # AP3P
@@ -755,7 +757,6 @@ def pointerPosition34(points):
             return None
         best = None
         if CONFIG.lastCameraPosition is None or not P3P_PROXIMITY_PREFERENCE:
-            base = np.float64((0,math.sqrt(accel[0]*accel[0]+accel[1]*accel[1]+accel[2]*accel[2]),0))
             bestDist = math.inf
             for i in range(len(rvecs)):
                 if not np.isnan(tvecs[i][0]):
