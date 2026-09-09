@@ -12,6 +12,7 @@ import threading
 import argparse
 import subprocess
 import cv2
+import timeit
 from scipy.spatial.transform import Rotation
 
 USE_P3P = False # fallback to P3P if only three points are visible; otherwise fallback to P2P with assumption about
@@ -66,6 +67,7 @@ ASPECT_RATIO = 1920./1080
 #CAMERA_ASPECT_RATIO = 1363./768
 FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4, 1634.5??
 CAMERA_HEIGHT_PIXELS = 768
+USE_P4P = True # use P4P instead of homography by default
 
 DEFAULT_IR_CALIBRATION = [(127,93),(896,93),(896,674),(127,674)]
 CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
@@ -148,7 +150,7 @@ class Config():
         self.prevPosition = None
         self.ledLocations = None
         self.yCorrection = 0
-        self.ledOffset = 0 
+        self.ledOffset = 0
         try:
             with open(LED_FILE) as f:
                 s = tuple(map(float,f.readline().strip().split(",")))
@@ -214,7 +216,7 @@ class Config():
         elif len(valid) != 4:
             return None
         else:
-            if self.ledOffset != 0:
+            if self.ledOffset != 0 or USE_P4P:
                 return pointerPosition34(irQuad)
             h = Homography(irQuad,self.ledLocations)
             if self.yCorrection: # sightline parallax correction
@@ -430,6 +432,8 @@ class Homography:
 
     def __repr__(self):
         return repr(self.matrix)
+
+calibrationHomography = Homography(None,None)
 
 def drawText(s,x=0.5,y=0.5,color=WHITE):
     text = MYFONT.render(s, True, color)
@@ -1404,6 +1408,15 @@ def connect(backgroundTimeout=0,silent=False):
             print("Exiting thread")
             return
 
+def benchmark():
+    ir = []
+    for i in range(4):
+        x,y = DEFAULT_IR_CALIBRATION[i]
+        x += np.random.randint(-20,20)
+        y += np.random.randint(-20,20)
+        ir.append(((x,y),1))
+    CONFIG.pointerPosition(getIRQuad(ir))
+
 def run(command):
     global running, args, abortConnect
     print("lightgun: run "+command)
@@ -1420,6 +1433,7 @@ if __name__ == '__main__':
     parser.add_argument("-M", "--measure", action="store_true", help="Calibrate by manual measurement of IR LED positions.")
     parser.add_argument("-w", "--width", type=float, default=1, help="Screen width for measurement calibration in preferred units.")
     parser.add_argument("-d", "--demo", action="store_true", help="Demo")
+    parser.add_argument("--benchmark", action="store_true", help="Benchmark")
     parser.add_argument("-f", "--flexible-led-placement", action="store_true", help="Do not assume the top and bottom LED pairs are horizontal")
     parser.add_argument("-o", "--horizontal", action="store_true", help="Horizontal mode (without lightgun)")
     parser.add_argument("-t", "--terminal", action="store_true", help="Use terminal rather than pygame (doesn't work for calibration)")
@@ -1445,6 +1459,10 @@ if __name__ == '__main__':
     
     LED_FILE = args.led_file
     CONFIG = Config()
+    
+    if args.benchmark:
+        print(timeit.timeit(benchmark,number=30000)/30000.)
+        sys.exit(0)
 
     if args.sensitivity >= 0:
         wiimote.set_ir_sensitivity(args.sensitivity)
