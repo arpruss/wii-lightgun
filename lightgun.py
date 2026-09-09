@@ -1,4 +1,4 @@
-_#!/usr/bin/python3
+#!/usr/bin/python3
 import wiimote
 import myinput
 import time
@@ -25,7 +25,7 @@ USE_CALIBRATION_HOMOGRAPHY = False
 abortConnect = False
 
 # todo: consider P3P for 3 point
-_
+
 CONFIG_DIR = os.sep.join((os.path.expanduser("~"),".wiilightgun"))
 LED_FILE = os.sep.join((os.path.expanduser("~"),".wiilightgun","irledcoordinates"))
 SCREENSHOT_FILE = os.sep.join((os.path.expanduser("~"),".wiilightgun","screenshot"))
@@ -276,7 +276,7 @@ def computeP2PA(m1,m2,cos_beta,rho1,rho2):
 def n(v):
     norm = np.linalg.norm(v)
     if norm != 0:
-        np.array(v) / np.linalg.norm(v)
+        return np.array(v) / norm
     else:
         return np.array( (0.,0.,0.) )
     
