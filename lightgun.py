@@ -67,7 +67,7 @@ ASPECT_RATIO = 1920./1080
 #CAMERA_ASPECT_RATIO = 1363./768
 FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4, 1634.5??
 CAMERA_HEIGHT_PIXELS = 768
-USE_P4P = True # use P4P instead of homography by default
+USE_P4P = False # use P4P instead of homography by default
 
 DEFAULT_IR_CALIBRATION = [(127,93),(896,93),(896,674),(127,674)]
 CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
@@ -1461,7 +1461,7 @@ if __name__ == '__main__':
     CONFIG = Config()
     
     if args.benchmark:
-        print(timeit.timeit(benchmark,number=30000)/30000.)
+        print(timeit.timeit(benchmark,number=1000)/1000.)
         sys.exit(0)
 
     if args.sensitivity >= 0:
