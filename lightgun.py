@@ -68,6 +68,7 @@ ASPECT_RATIO = 1920./1080
 FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4, 1634.5??
 CAMERA_HEIGHT_PIXELS = 768
 USE_P4P = False # use P4P instead of homography by default
+FLOAT = np.float64
 
 DEFAULT_IR_CALIBRATION = [(127,93),(896,93),(896,674),(127,674)]
 CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
@@ -77,11 +78,6 @@ lastAngle = math.pi / 2
 lastAccel = [0,0,1]
 lastAccelTime = -1
 lastQuad = None
-
-# For moderate angles, the simple y correction (sightline parallax) is about half a pixel
-# off and should be a bit faster as it punts more of the computation to cv2. But I haven't
-# really tested the speed.
-SIMPLE_Y_CORRECTION = False
 
 verticalMap = ((wiimote.BTN_B, myinput.BTN_LEFT),
         (wiimote.BTN_A, myinput.BTN_RIGHT),
@@ -219,16 +215,8 @@ class Config():
             if self.ledOffset != 0 or USE_P4P:
                 return pointerPosition34(irQuad)
             h = Homography(irQuad,self.ledLocations)
-            if self.yCorrection: # sightline parallax correction
-                if SIMPLE_Y_CORRECTION:
-                    xy = h.apply((0,0))
-                    xy2 = h.apply((0.01,0.01)) # shouldn't this be (0,0.01)?
-                    dx,dy = (xy2[0]-xy[0])*self.aspect,xy2[1]-xy[1]
-                    d = math.hypot(dx,dy)
-                    return xy[0]+self.yCorrection*dx/d/self.aspect,xy[1]+self.yCorrection*dy/d
-                else:
-                    xy = h.apply((0,self.yCorrection/h.minimumScalingAtOrigin(self.aspect))) 
-                    return xy
+            if self.yCorrection != 0: # sightline parallax correction
+                return h.apply((0,self.yCorrection/h.minimumScalingAtOrigin(self.aspect))) 
             else:
                 return h.apply((0,0))
             
@@ -249,7 +237,7 @@ def solutionToXYZ(m1,m2,d1,d2,h1,h2):
     x = m1[0]+(d*d-d2*d2+d1*d1)/(2*d) # magnitude of vector from m1 to intersection    
     y = m1[1]-math.sqrt(4*d*d*d1*d1-(d*d-d2*d2+d1*d1)**2)/(2*d)
     z = h1 + m1[2]
-    return np.array([x,y,z])
+    return np.array([x,y,z], dtype=FLOAT)
     
 def computeP2PA(m1,m2,cos_beta,rho1,rho2):
     # assume equal heights
@@ -276,27 +264,28 @@ def computeP2PA(m1,m2,cos_beta,rho1,rho2):
         return (dj,di,hj,hi)
 
 def n(v):
+    v = np.asarray(v,dtype=FLOAT)
     norm = np.linalg.norm(v)
     if norm != 0:
-        return np.array(v) / norm
+        return v / norm
     else:
-        return np.array( (0.,0.,0.) )
+        return np.array( (0.,0.,0.), dtype=FLOAT )
     
 def cross2D(p,q):
     return p[0]*q[1]-p[1]*q[0]
         
 def pointerPosition2LED(p1,p2,led1,led2,g):
     # if g is non-zero, use P2PA
-    dir1Orig = np.array([ (p1[0])*CAMERA_HEIGHT_PIXELS,FOCAL_LENGTH_PIXELS,(p1[1])*CAMERA_HEIGHT_PIXELS])
-    dir2Orig = np.array([ (p2[0])*CAMERA_HEIGHT_PIXELS,FOCAL_LENGTH_PIXELS,(p2[1])*CAMERA_HEIGHT_PIXELS])
+    dir1Orig = np.array([ (p1[0])*CAMERA_HEIGHT_PIXELS,FOCAL_LENGTH_PIXELS,(p1[1])*CAMERA_HEIGHT_PIXELS], dtype=FLOAT)
+    dir2Orig = np.array([ (p2[0])*CAMERA_HEIGHT_PIXELS,FOCAL_LENGTH_PIXELS,(p2[1])*CAMERA_HEIGHT_PIXELS], dtype=FLOAT)
     avgHeight = (led1[1]+led2[1])/2
     m1 = (led1[0]*CONFIG.aspect,CONFIG.ledOffset,avgHeight)
     m2 = (led2[0]*CONFIG.aspect,CONFIG.ledOffset,avgHeight)
     
     if g is not None:
-        down = np.array([0.,0.,-1.])
+        down = np.array([0.,0.,-1.], dtype=FLOAT)
         g = -n(g)
-        prod = np.cross(g,down)
+        prod = np.cross(g,down) # TODO: optimize
         accelerometerRotation = Rotation.align_vectors( [down,prod],[g,prod] )[0].as_matrix()
 
         # accelerometerRotation.dot(g) should equal down
@@ -320,15 +309,15 @@ def pointerPosition2LED(p1,p2,led1,led2,g):
         cameraDistanceFromLEDMidpoint = abs(led1[0]-led2[0]) * CONFIG.aspect / (2. * math.tan(rayAngle / 2))
         cameraDistanceFromTVCenter = math.sqrt(cameraDistanceFromLEDMidpoint*cameraDistanceFromLEDMidpoint-avgHeight*avgHeight)
         
-        cameraPosition = np.array([CONFIG.aspect*.5,-cameraDistanceFromTVCenter,.5])
+        cameraPosition = np.array([CONFIG.aspect*.5,-cameraDistanceFromTVCenter,.5], dtype=FLOAT)
     
     dir1Obj = m1 - cameraPosition
     dir2Obj = m2 - cameraPosition
     
     cameraToObjectRotation = Rotation.align_vectors( [n(dir1Obj),n(dir2Obj)], [n(dir1Orig), n(dir2Orig)] )[0].as_matrix()
     
-    cameraPointing = cameraToObjectRotation.dot( np.array((0.,1.,0.)) )
-    yCorrection = cameraToObjectRotation.dot( np.array((0.,0.,CONFIG.yCorrection)) )
+    cameraPointing = cameraToObjectRotation.dot( np.array((0.,1.,0.), dtype=FLOAT) )
+    yCorrection = cameraToObjectRotation.dot( np.array((0.,0.,CONFIG.yCorrection), dtype=FLOAT) )
     cameraPosition += yCorrection
 
     dy = -cameraPosition[1]
@@ -389,7 +378,7 @@ def wiimoteCallback(events,t):
 # was 1280
 INTRINSIC = np.array( ( [FOCAL_LENGTH_PIXELS/768.,0,0.0],
     [0,FOCAL_LENGTH_PIXELS/768.,0.0],
-    [0,0,1] ), dtype=np.float64 )
+    [0,0,1] ), dtype=FLOAT )
 INTRINSIC_INV = np.linalg.inv(INTRINSIC)    
 
 class Homography:
@@ -397,7 +386,7 @@ class Homography:
         if input is None: # identity
             self.matrix = None
             return
-        self.matrix,_ = cv2.findHomography(np.float64(input),np.float64(output))
+        self.matrix,_ = cv2.findHomography(np.asarray(input,dtype=FLOAT),np.asarray(output,dtype=FLOAT))
 
     #def jacobianAtOrigin(self):
     #    return np.array( (self.a-self.c*self.g, self.b-self.c*self.h),
@@ -427,7 +416,7 @@ class Homography:
     def apply(self,xy):
         if self.matrix is None:
             return xy
-        out = cv2.perspectiveTransform(np.array(((xy,),),dtype=np.float64),self.matrix)
+        out = cv2.perspectiveTransform(np.asarray(((xy,),),dtype=FLOAT),self.matrix)
         return out[0][0]
 
     def __repr__(self):
@@ -482,7 +471,7 @@ def showPoints(ir,irQuad):
             pygame.draw.rect(surface, WHITE, (x-size*PXSCALE/2, y-size*PXSCALE/2, size*PXSCALE, size*PXSCALE))
     
 def getPoint(p):
-    xy = calibrationHomography.apply((p[0][0],p[0][1]))
+    xy = calibrationHomography.apply(p[0])
     return (xy[0]-CENTER_X)/768., (xy[1]-CENTER_Y)/768.
     
 def getSize(p):
@@ -655,19 +644,19 @@ def points3To4(points):
     missing = tuple(set((0,1,2,3)) - set(identified))[0]
 
     def fix(p):
-        return (p[0]*CONFIG.aspect,p[1],0)
+        return np.array((p[0]*CONFIG.aspect,p[1],0.),dtype=FLOAT)
 
-    source = np.array([fix(CONFIG.ledLocations[identified[i]]) for i in range(3)],dtype=np.float64)
-    dest = np.array(points,dtype=np.float64)
+    source = np.array([fix(CONFIG.ledLocations[identified[i]]) for i in range(3)], dtype=FLOAT)
+    dest = np.array(points,dtype=FLOAT)
     retval, rvecs, tvecs = cv2.solveP3P(source,dest,INTRINSIC,None,cv2.SOLVEPNP_AP3P) # AP3P
 
     if not retval:
         return None
 
     bestR2 = math.inf
-    missingLED = np.float64((fix(CONFIG.ledLocations[missing]),))
+    missingLED = fix(CONFIG.ledLocations[missing])
 
-    accel = n(np.float64((-lastAccel[0],lastAccel[2],lastAccel[1])))
+    accel = n((-lastAccel[0],lastAccel[2],lastAccel[1]))
     
     if lastQuad is None or not P3P_PROXIMITY_PREFERENCE:
         best = None
@@ -715,7 +704,7 @@ def pixel_to_world(pixel_u, pixel_v, R, tvec, K_inv):
     """
 
     # 3. Create the pixel coordinate in homogeneous form [u, v, 1]
-    uv_homo = np.array([[pixel_u], [pixel_v], [1.0]])
+    uv_homo = np.array([[pixel_u], [pixel_v], [1.0]], dtype=FLOAT)
     
     # 4. Transform pixel to a ray direction in the Camera Frame
     ray_cam = K_inv @ uv_homo
@@ -736,7 +725,7 @@ def pixel_to_world(pixel_u, pixel_v, R, tvec, K_inv):
     world_point = cam_pos_world + s * ray_world
     
     out = world_point.ravel() # Returns [X, Y, 0.0]    
-    return np.array([out[0],out[1]])
+    return np.array([out[0],out[1]], dtype=FLOAT)
     
 def pointerPosition34(points):
     source = []
@@ -750,10 +739,10 @@ def pointerPosition34(points):
             count += 1
     if count < 3:
         return None
-    source = np.array(source,dtype=np.float64)
-    dest = np.array(dest,dtype=np.float64)
+    source = np.array(source,dtype=FLOAT)
+    dest = np.array(dest,dtype=FLOAT)
 
-    accel = n(np.float64((-lastAccel[0],lastAccel[2],lastAccel[1])))
+    accel = n((-lastAccel[0],lastAccel[2],lastAccel[1]))
     
     if count == 3:
         retval, rvecs, tvecs = cv2.solveP3P(source,dest,INTRINSIC,None,cv2.SOLVEPNP_AP3P) # AP3P
@@ -1200,7 +1189,6 @@ def center():
         ir = wm.state.get("ir",[None,None,None,None])
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
-        #print(lastAngle, (1-index*2)*math.pi/2)
         if irQuad and abs(lastAngle - (1-index*2)*math.pi/2) < math.pi/4:
             drawText("Press C on Nunchuk or SPACE on keyboard", y=0.7)
             buttons = getButtons(wm.state)
@@ -1417,6 +1405,15 @@ def benchmark():
         ir.append(((x,y),1))
     CONFIG.pointerPosition(getIRQuad(ir))
 
+def benchmark2():
+    ir = []
+    for i in range(4):
+        x,y = DEFAULT_IR_CALIBRATION[i]
+        x += np.random.randint(-20,20)
+        y += np.random.randint(-20,20)
+        ir.append(((x,y),1))
+    getIRQuad(ir)
+
 def run(command):
     global running, args, abortConnect
     print("lightgun: run "+command)
@@ -1461,7 +1458,8 @@ if __name__ == '__main__':
     CONFIG = Config()
     
     if args.benchmark:
-        print(timeit.timeit(benchmark,number=1000)/1000.)
+        print(timeit.timeit(benchmark,number=3000)/3000.)
+        print(timeit.timeit(benchmark2,number=3000)/3000.)
         sys.exit(0)
 
     if args.sensitivity >= 0:
