@@ -281,7 +281,7 @@ def cross2D(p,q):
         
 def align_vectors(a1,a2, b1,b2):
     """
-    generates a rotation of the vectors a1,a2 to the vectors b1,b2
+    generates a rotation of the vectors a1,a2 to the vectors b1,b2 respectively
     """
     norm = np.linalg.norm(a1)
     if norm == 0:
@@ -309,6 +309,9 @@ def align_vectors(a1,a2, b1,b2):
 
     V = np.column_stack((v1, v2, v3))
     U = np.column_stack((u1, u2, u3))
+    
+    # U.T maps u1,u2,u3 to the standard basis vectors
+    # and V maps the standard basis vectors to v1,v2,v3
 
     return V @ U.T
     
