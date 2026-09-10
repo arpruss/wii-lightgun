@@ -75,7 +75,7 @@ CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
 UNIT_SQUARE = ((0,0), (1,0), (1,1), (0,1))
 
 lastAngle = math.pi / 2
-lastAccel = [0,0,1]
+lastAccel = np.array([0,0,1], dtype=FLOAT)
 lastAccelTime = -1
 lastQuad = None
 
@@ -483,9 +483,9 @@ def getSize(p):
 def updateAcceleration(state):
     global lastAngle,lastAccel,lastAccelTime
 
-    a = list(state.get("acc_calib",(0.,0.,1.)))
+    a = np.array(state.get("acc_calib",(0.,0.,1.)), dtype=FLOAT)
     
-    mag = math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2])
+    mag = np.linalg.norm(a)
         
     t = time.monotonic()
     
@@ -508,8 +508,6 @@ def updateAcceleration(state):
     except:
         pass
 
-lastQuad = None
-
 def absSlope(p1,p2):
     if p1[0] == p2[0]:
         return math.inf
@@ -518,7 +516,7 @@ def absSlope(p1,p2):
 def identifyPoints(points):
     n = len(points)
 
-    identified = [None for i in range(n)]
+    identified = n*[None,]
     
     if n<2:
         return identified
@@ -551,7 +549,7 @@ def identifyPoints(points):
                 else:
                     identified[0] = 2
                     identified[1] = 3
-            # the diagonal case typically does not have a 
+            # the diagonal case is being ignored
     else:
         cx = sum(p[0] for p in points)/float(n)
         cy = sum(p[1] for p in points)/float(n)
@@ -641,7 +639,11 @@ def points3To4(points):
     if None in identified:
         return None
 
-    missing = tuple(set((0,1,2,3)) - set(identified))[0]
+    missing = 3
+    for i in range(3):
+        if i not in identified:
+            missing = i
+            break
 
     def fix(p):
         return np.array((p[0]*CONFIG.aspect,p[1],0.),dtype=FLOAT)
@@ -866,7 +868,9 @@ def getIRQuad(ir):
         if None in identified:
             lastQuad = None
         else:
-            lastQuad = [points[identified.index(i)] for i in range(4)]
+            lastQuad = [None,None,None,None]
+            for i in range(4):
+                lastQuad[identified[i]] = points[i]
     return lastQuad
     
 def getDisplaySize():
