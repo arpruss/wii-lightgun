@@ -1370,7 +1370,7 @@ def connect(backgroundTimeout=0,silent=False):
             print("Attempting to connect to Wii Remote")
             wm = wiimote.Wiimote(connectCallback=connectMessage if not silent else None)
             print("ID:",wm.id)
-            if USE_CALIBRATION_HOMOGRAPHY and hasattr(wm,'irCalibration'):
+            if USE_CALIBRATION_HOMOGRAPHY:
                 calibrationHomography = Homography(wm.irCalibration,DEFAULT_IR_CALIBRATION)
                 CENTER_X = 512
                 CENTER_Y = 384
