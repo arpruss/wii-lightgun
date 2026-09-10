@@ -13,7 +13,6 @@ import argparse
 import subprocess
 import cv2
 import timeit
-from scipy.spatial.transform import Rotation
 
 USE_P3P = False # fallback to P3P if only three points are visible; otherwise fallback to P2P with assumption about
                # gun being centered on screen
@@ -280,6 +279,39 @@ def n(v):
 def cross2D(p,q):
     return p[0]*q[1]-p[1]*q[0]
         
+def align_vectors(a1,a2, b1,b2):
+    """
+    generates a rotation of the vectors a1,a2 to the vectors b1,b2
+    """
+    norm = np.linalg.norm(a1)
+    if norm == 0:
+        return np.identity(3)
+    v1 = a1 / norm
+    norm = np.linalg.norm(b1)
+    if norm == 0:
+        return np.identity(3)
+    u1 = b1 / norm
+
+    v2 = np.cross(v1, a2)
+    norm = np.linalg.norm(v2)
+    if norm == 0:
+        return np.identity(3)
+    v2 /= norm
+    
+    u2 = np.cross(u1, b2)
+    norm = np.linalg.norm(u2)
+    if norm == 0:
+        return np.identity(3)
+    u2 /= norm
+
+    v3 = np.cross(v1, v2)
+    u3 = np.cross(u1, u2)
+
+    V = np.column_stack((v1, v2, v3))
+    U = np.column_stack((u1, u2, u3))
+
+    return V @ U.T
+    
 def pointerPosition2LED(p1,p2,led1,led2,g):
     # if g is non-zero, use P2PA
     dir1Orig = np.array([ (p1[0])*CAMERA_HEIGHT_PIXELS,FOCAL_LENGTH_PIXELS,(p1[1])*CAMERA_HEIGHT_PIXELS], dtype=FLOAT)
@@ -290,11 +322,11 @@ def pointerPosition2LED(p1,p2,led1,led2,g):
     
     if g is not None:
         down = np.array([0.,0.,-1.], dtype=FLOAT)
-        g = -n(g)
-        prod = np.cross(g,down) # TODO: optimize
-        accelerometerRotation = Rotation.align_vectors( [down,prod],[g,prod] )[0].as_matrix()
+        a = -g
+        prod = np.cross(a,down) 
+        accelerometerRotation = align_vectors(down,prod, a,prod)       
 
-        # accelerometerRotation.dot(g) should equal down
+        # accelerometerRotation.dot(a) should equal down
         dir1 = accelerometerRotation.dot(dir1Orig)
         dir2 = accelerometerRotation.dot(dir2Orig)
         d1 = math.hypot(dir1[0],dir1[1])
@@ -320,7 +352,7 @@ def pointerPosition2LED(p1,p2,led1,led2,g):
     dir1Obj = m1 - cameraPosition
     dir2Obj = m2 - cameraPosition
     
-    cameraToObjectRotation = Rotation.align_vectors( [n(dir1Obj),n(dir2Obj)], [n(dir1Orig), n(dir2Orig)] )[0].as_matrix()
+    cameraToObjectRotation = align_vectors(dir1Obj,dir2Obj, dir1Orig,dir2Orig)
     
     cameraPointing = cameraToObjectRotation.dot( np.array((0.,1.,0.), dtype=FLOAT) )
     yCorrection = cameraToObjectRotation.dot( np.array((0.,0.,CONFIG.yCorrection), dtype=FLOAT) )
