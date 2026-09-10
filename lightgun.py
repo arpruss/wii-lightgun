@@ -64,18 +64,24 @@ NUNCHUK_Z = wiimote.NUNCHUK_BTN_Z << NUNCHUK_SHIFT
 NUNCHUK_DEADZONE = 40
 NUNCHUK_HYSTERESIS = 10
 ASPECT_RATIO = 1920./1080
-#CAMERA_ASPECT_RATIO = 1363./768
 FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4, 1634.5??
 CAMERA_HEIGHT_PIXELS = 768
 USE_P4P = False # use P4P instead of homography by default
 FLOAT = np.float64
 
-DEFAULT_IR_CALIBRATION = [(127,93),(896,93),(896,674),(127,674)]
+DEFAULT_IR_CALIBRATION = ((127,93),(896,93),(896,674),(127,674))
 CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
 UNIT_SQUARE = ((0,0), (1,0), (1,1), (0,1))
 
+INTRINSIC = np.array( ( [FOCAL_LENGTH_PIXELS/768.,0.,0.],
+    [0,FOCAL_LENGTH_PIXELS/768.,0.0],
+    [0,0,1] ), dtype=FLOAT )
+INTRINSIC_INV = np.array( ( [1./INTRINSIC[0][0],0.,0.],
+    [0.,1./INTRINSIC[1][1],0.],
+    [0.,0.,1.] ), dtype=FLOAT )
+
 lastAngle = math.pi / 2
-lastAccel = np.array([0,0,1], dtype=FLOAT)
+lastAccel = np.array((0,0,1), dtype=FLOAT)
 lastAccelTime = -1
 lastQuad = None
 
@@ -374,12 +380,6 @@ def wiimoteCallback(events,t):
     global lastMessage
     lastMessage = time.monotonic()
     WIIMOTE_EVENT.set()
-
-# was 1280
-INTRINSIC = np.array( ( [FOCAL_LENGTH_PIXELS/768.,0,0.0],
-    [0,FOCAL_LENGTH_PIXELS/768.,0.0],
-    [0,0,1] ), dtype=FLOAT )
-INTRINSIC_INV = np.linalg.inv(INTRINSIC)    
 
 class Homography:
     def __init__(self,input,output):
@@ -789,12 +789,12 @@ def dist2DSquared(xy1,xy2):
     return dx*dx+dy*dy
     
 def getIRQuad(ir):
+    # get the IR LED quad, normalized with camera height = 1, and arranged counterclockwise from lower left
     global lastQuad
 
     if ir is None:
         return None
 
-    # get the IR LED quad, normalized and arranged counterclockwise from lower left
     
     points = [getPoint(p) for p in ir if p is not None]
 
@@ -1181,7 +1181,7 @@ def center():
         surface.fill(BLACK)
         wiimoteWait(0.25)
         if quads[0] is None:
-            drawText("Put Wiimote right-side-up pointing at LEDs")
+            drawText("Put Wiimote top-side-up pointing at LEDs")
             drawText("Ensure repeatable alignment", y=0.6)
             index = 0
         elif quads[1] is None:
@@ -1214,7 +1214,7 @@ def center():
                 sx += p[0]
                 sy += p[1]
             
-    CENTER_X = sx / 8. * 1024.
+    CENTER_X = sx / 8. * 768.
     CENTER_Y = sy / 8. * 768.
     
     CONFIG.setCenter(wm, (CENTER_X, CENTER_Y))
