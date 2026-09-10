@@ -13,6 +13,7 @@ import argparse
 import subprocess
 import cv2
 import timeit
+import display
 
 USE_P3P = False # fallback to P3P if only three points are visible; otherwise fallback to P2P with assumption about
                # gun being centered on screen
