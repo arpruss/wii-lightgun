@@ -4,7 +4,7 @@ import myinput
 import time
 import math
 import os
-import pygame
+import display
 import sys
 import numpy as np
 import atexit
@@ -37,12 +37,11 @@ RED = (255,0,0)
 GRAY = (64,64,64)
 DARK_GREEN = (0,64,0)
 VERY_DARK_GREEN = (0,32,0)
-MYFONT = None
+TK = False
 WINDOW_SIZE = None
 PXSCALE = 1
 ACCEL_FILTER_TIME = 0.25
 ACCEL_CUTOFF_FREQ = 12
-PYGAME_MODE = True
 RUMBLE_TIME = 0.06
 wm = None
 running = True
@@ -460,55 +459,32 @@ class Homography:
 
 calibrationHomography = Homography(None,None)
 
-def drawText(s,x=0.5,y=0.5,color=WHITE):
-    text = MYFONT.render(s, True, color)
-    textRect = text.get_rect()
-    textRect.center = (WINDOW_SIZE[0]*x,WINDOW_SIZE[1]*y)
-    surface.blit(text, textRect)
-
-def drawBlob(xy,size=3,color=WHITE):
-    pygame.draw.rect(surface, color, (xy[0]*WINDOW_SIZE[0]-size*PXSCALE/2, (1.-xy[1])*WINDOW_SIZE[1]-size*PXSCALE/2, size*PXSCALE, size*PXSCALE))
-
-def drawCross(xy,thickness=3,size=0.25,color=WHITE):
-    l = size*WINDOW_SIZE[1]/2.
-    x = xy[0]*WINDOW_SIZE[0]
-    y = (1-xy[1])*WINDOW_SIZE[1]
-    t = thickness*PXSCALE
-    pygame.draw.rect(surface, color, (x-l/2.,y-t/2.,l,t))
-    pygame.draw.rect(surface, color, (x-t/2.,y-l/2.,t,l))
-
 def showPoints(ir,irQuad):
-    cy = int(WINDOW_SIZE[1] * 0.25)
-    cx = WINDOW_SIZE[0] // 2
-    height = int(WINDOW_SIZE[1] * 0.4)
-    width = height * 4 // 3
-    
-    pygame.draw.rect(surface, VERY_DARK_GREEN, (cx-width//2, cy-height//2, width, height))
+    display.clearPoints()
 
-    rawPoints = [getPoint(p) for p in ir if p is not None]
+    rawPoints = [getPoint(p) if p is not None else None for p in ir]
 
     if irQuad:
         for i in range(len(irQuad)):
             xy = irQuad[i]
             if xy is None:
                 continue
-            x = int(cx + xy[0] * height)
-            y = int(cy + (-xy[1]) * height)
-            text = MYFONT.render(str(i+1), True, RED if (tuple(xy) in rawPoints) else GRAY)
-            textRect = text.get_rect()
-            textRect.center = (x,y)
-            surface.blit(text, textRect)
-    for point in ir:
-        if point is not None:
-            xy = getPoint(point)
-            size = getSize(point)
-            x = int(cx + xy[0] * height)
-            y = int(cy + (-xy[1]) * height)
-            pygame.draw.rect(surface, WHITE, (x-size*PXSCALE/2, y-size*PXSCALE/2, size*PXSCALE, size*PXSCALE))
+            for j in range(len(ir)):
+                if rawPoints[j] is not None and np.linalg.norm( rawPoints[j] - xy ) < .001:
+                    original = True
+                    break
+            else:
+                original = False
+            display.drawPoint(xy[0],xy[1],0,i,original,True)
+    for i in range(len(ir)):
+        if ir[i]:
+            x,y = getPoint(ir[i])
+            size = ir[i][1] or 1
+            display.drawPoint(x,y,size,i,True,False)
     
 def getPoint(p):
     xy = calibrationHomography.apply(p[0])
-    return (xy[0]-CENTER_X)/768., (xy[1]-CENTER_Y)/768.
+    return np.array(((xy[0]-CENTER_X)/768., (xy[1]-CENTER_Y)/768.),dtype=FLOAT)
     
 def getSize(p):
     try:
@@ -909,39 +885,19 @@ def getIRQuad(ir):
     return lastQuad
     
 def getDisplaySize():
-    info = pygame.display.Info()
-    return info.current_w, info.current_h    
+    return display.SIZE
 
 def screenshot():
-    size = getDisplaySize()
-    img = pygame.Surface(size)
-    img.blit(surface,(0,0),((0,0),size))
-    pygame.image.save(img,SCREENSHOT_FILE+str(time.monotonic())+".png")
+    pass
     
 def checkQuitAndKeys():
-    global running
-    pygame.event.pump()
-    keys = set()
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-            running = False
-            sys.exit(0)
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_F8:
-                screenshot()
-            keys.add(event.key)
-    if wm and 'buttons' in wm.state:
-        if wm.state['buttons'] & wiimote.BTN_HOME:
-            running = False
-            sys.exit(0)
-    return keys
+    display.update()
+    if (wm and 'buttons' in wm.state and (wm.state['buttons'] & wiimote.BTN_HOME)) or not display.isRunning():
+        running = False
+        display.close()
+        sys.exit(0)
+    return display.getKeys()
     
-def verticalArrow(xy,length,color=WHITE):
-    x,y = xy
-    pygame.draw.line(surface,color,[x,y],[x,y+length],2)
-    pygame.draw.line(surface,color,[x,y],[x-length//2,y+length//2],2)
-    pygame.draw.line(surface,color,[x,y],[x+length//2,y+length//2],2)
-
 def drawArrow(xy,bottom,color=WHITE):
     x,y = xy
     if bottom:
@@ -952,10 +908,10 @@ def drawArrow(xy,bottom,color=WHITE):
         length = y-WINDOW_SIZE[1]
         edgeY = 0
         signY = 1
-    verticalArrow((x,edgeY),length*signY,color=color)
+    display.drawVerticalArrow((x,edgeY),length*signY,color=color)
     
 def measure(flexible=False,screenWidth=1.):
-    global running,surface
+    global running
     
     size = WINDOW_SIZE
     scale = float(screenWidth)/WINDOW_SIZE[0]
@@ -983,10 +939,12 @@ def measure(flexible=False,screenWidth=1.):
     done = False
     yCorrection = int(math.floor(CONFIG.yCorrection*size[1] + 0.5))
     
+    display.clear(DARK_GREEN)
+    display.drawCameraView()
+
     while running:
         time.sleep(0.005)
         checkQuitAndKeys()
-        surface.fill(DARK_GREEN)
         updateAcceleration(wm.state)
         ir = wm.state.get("ir", [None,None,None,None])
         irQuad = getIRQuad(ir)
@@ -998,10 +956,10 @@ def measure(flexible=False,screenWidth=1.):
             CONFIG.yCorrection = yCorrection / size[1]
             s = CONFIG.pointerPosition(irQuad)
             if s is not None:
-                drawCross(s,color=RED)
+                display.drawCross(s,color=RED)
 
-        drawText("HOME: quit without saving", y=0.5+TEXT_SPACING*2)
-        drawText("A: done", y=0.5+TEXT_SPACING*3)
+        display.drawText("HOME: quit without saving", y=0.5+TEXT_SPACING*2)
+        display.drawText("A: done", y=0.5+TEXT_SPACING*3)
 
         buttons = getButtons(wm.state)
         pressed = buttons &~ prevButtons
@@ -1022,7 +980,7 @@ def measure(flexible=False,screenWidth=1.):
 
         if corner==4:
             yCorrection += move[1]
-
+            
         for i in range(NUM_POINTS):
             xy = ledPixel[i]
             if NUM_POINTS > 2:
@@ -1050,22 +1008,28 @@ def measure(flexible=False,screenWidth=1.):
                 length = y-size[1]
                 signY = -1
             drawArrow(xy,bottom,color=WHITE if i==corner else GRAY)
+            if i == corner:
+                selectedLength = length
         
         if corner<4:
-            drawText("DPad: move LED location",y=0.5)
-            drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
+            display.delete("yCorrection")
+            display.delete("yCorrection2")
+            display.drawText("DPad: move LED location",y=0.5)
+            display.drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
+            display.drawText(None,y=0.5+TEXT_SPACING*4)
             if NUM_POINTS == 2:
-                drawText("1/2: LEDs on top/bottom",y=0.5+TEXT_SPACING*4)
-            drawText("LED is %.4g units (%.1f px) off-screen" % (length*scale, length),y=0.5+TEXT_SPACING*(4 if NUM_POINTS==4 else 5))
+                display.drawText("1/2: LEDs on top/bottom",y=0.5+TEXT_SPACING*4)
+            display.drawText("LED is %.4g units (%.1f px) off-screen" % (selectedLength*scale, selectedLength),y=0.5+TEXT_SPACING*5)
         else:
-            drawText("Up/Down: adjust Y correction",y=0.5)
-            drawText("-/+: next/previous setting",y=0.6)
-            drawText("Y correction is %.4g units (%.1f px)" % (yCorrection*scale, yCorrection),y=0.5+0.075*4)
+            display.drawText("Up/Down: adjust Y correction",y=0.5)
+            display.drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
+            display.drawText("Y correction is %.4g units (%.1f px)" % (yCorrection*scale, yCorrection),y=0.5+TEXT_SPACING*4)
+            display.drawText(None,y=0.5+TEXT_SPACING*5)
             ax = int(size[0]//4)
             ay = int(size[1]*0.5-yCorrection/2)            
-            b = min(size[1] * .2, yCorrection + size[1] * .1)
-            pygame.draw.rect(surface, VERY_DARK_GREEN, ( [ax-b//2,ay+yCorrection//2-b//2,b,b] ))
-            verticalArrow((ax,ay),yCorrection,color=WHITE)
+            b = int(min(size[1] * .2, yCorrection + size[1] * .1))
+            display.drawRect(ax-b//2,ay+yCorrection//2-b//2,b,b,color=VERY_DARK_GREEN, tag="yCorrection")
+            display.drawVerticalArrow((ax,ay),yCorrection,color=WHITE, tag="yCorrection2")
 
         if pressed & wiimote.BTN_PLUS:
             corner = (corner+1) % 5
@@ -1089,7 +1053,7 @@ def measure(flexible=False,screenWidth=1.):
             done = True
             break              
             
-        pygame.display.flip()
+        display.update()
 
     if not done:
         return False
@@ -1123,7 +1087,7 @@ def computeLEDs(calibrationData,flexible):
     return leds
 
 def calibrate(flexible=False):
-    global CALIBRATION_CORNERS,running,surface
+    global CALIBRATION_CORNERS,running
 
     if args.terminal:
         print("Calibration cannot work with terminal mode.")
@@ -1155,15 +1119,16 @@ def calibrate(flexible=False):
         newButtons = buttons & ~prevButtons
         prevButtons = buttons
         checkQuitAndKeys()
-        surface.fill(BLACK)
+        display.clear(BLACK)
+        display.drawCameraView()
         updateAcceleration(wm.state)
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
         debounced = 0.5 + lastCalibrated < time.monotonic()
         valid = irQuad and debounced
-        drawCross(CALIBRATION_CORNERS[corner],color=RED if valid else GRAY)
+        display.drawCross(CALIBRATION_CORNERS[corner],color=RED if valid else GRAY)
         if debounced:
-            drawText("Press trigger (B"+(" or C" if 'nunchuk' in wm.state else "")+") while pointing at red calibration mark" if irQuad else "Point Wiimote at calibration mark from far enough away")
+            display.drawText("Press trigger (B"+(" or C" if 'nunchuk' in wm.state else "")+") while pointing at red calibration mark" if irQuad else "Point Wiimote at calibration mark from far enough away")
         if newButtons & wiimote.BTN_MINUS and len(calibrationData[0]):
             if corner == 0:
                 corner = len(CALIBRATION_CORNERS)-1
@@ -1178,8 +1143,8 @@ def calibrate(flexible=False):
             corner = (corner + 1) % len(CALIBRATION_CORNERS)
         n = len(calibrationData[-1])
         if n:
-            drawText("Each mark has been calibrated "+("once" if n==1 else "%d times" % n),y=0.7)
-            drawText("Press A "+("or C " if 'nunchuk' in wm.state else "")+"button if that's enough",y=0.8)
+            display.drawText("Each mark has been calibrated "+("once" if n==1 else "%d times" % n),y=0.7)
+            display.drawText("Press A "+("or C " if 'nunchuk' in wm.state else "")+"button if that's enough",y=0.8)
             if newButtons & wiimote.BTN_A:
                 break
             if not flexible:
@@ -1187,7 +1152,7 @@ def calibrate(flexible=False):
                 for i in range(4):
                    x = int(leds[i][0] * WINDOW_SIZE[0])
                    y = int((1-leds[i][1]) * WINDOW_SIZE[1])
-        pygame.display.flip()
+        display.update()
             
     if not running or not len(calibrationData[-1]):
         return False
@@ -1213,15 +1178,16 @@ def center():
     while running:
         keys = checkQuitAndKeys()
         updateAcceleration(wm.state)
-        surface.fill(BLACK)
+        display.clear(BLACK)
+        display.drawCameraView()
         wiimoteWait(0.25)
         if quads[0] is None:
-            drawText("Put Wiimote top-side-up pointing at LEDs")
-            drawText("Ensure repeatable alignment", y=0.6)
+            display.drawText("Put Wiimote top-side-up pointing at LEDs")
+            display.drawText("Ensure repeatable alignment", y=0.6)
             index = 0
         elif quads[1] is None:
-            drawText("Put Wiimote upside-down pointing at LEDs")
-            drawText("Ensure same alignment as before ", y=0.6)
+            display.drawText("Put Wiimote upside-down pointing at LEDs")
+            display.drawText("Ensure same alignment as before ", y=0.6)
             index = 1
         else:
             break
@@ -1229,11 +1195,11 @@ def center():
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
         if irQuad and abs(lastAngle - (1-index*2)*math.pi/2) < math.pi/4:
-            drawText("Press C on Nunchuk or SPACE on keyboard", y=0.7)
+            display.drawText("Press C on Nunchuk or SPACE on keyboard", y=0.7)
             buttons = getButtons(wm.state)
-            if buttons & NUNCHUK_C or pygame.K_SPACE in keys:
+            if buttons & NUNCHUK_C or ' ' in keys:
                 quads[index] = irQuad
-        pygame.display.flip()
+        display.update()
 
     if not running:
         CENTER_X = 1024/2
@@ -1264,8 +1230,9 @@ def demo():
 
     while running:
         wiimoteWait(0.25)
-        surface.fill(BLACK)
-        drawText("Press HOME to exit")
+        display.clear(BLACK)
+        display.drawCameraView()
+        display.drawText("Press HOME to exit")
         buttons = getButtons(wm.state)
         ir = wm.state.get("ir",[None,None,None,None])
         checkQuitAndKeys()
@@ -1275,10 +1242,10 @@ def demo():
         if irQuad:
             screenXY = CONFIG.pointerPosition(irQuad)
             if screenXY is not None:
-                drawCross(screenXY,color=RED)
-        pygame.display.flip()
+                display.drawCross(screenXY,color=RED)
+        display.update()
 
-    pygame.quit()
+    display.quit()
 
 def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", horizontal=False,rumble=False):
     global running
@@ -1381,18 +1348,26 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
             finally:
                 for u in uinputPressed:
                     (device if u == myinput.BTN_LEFT or u == myinput.BTN_RIGHT else device2).release(u)
-                    
+
+newConnectMessage = True
+connectMessage = ""
+               
+def updateConnectMessages():
+    global newConnectMessage
+    if TK and newConnectMessage:
+        display.drawText(connectMessage)
+        display.drawText("Make sure Wii is turned off", y=0.7)
+        display.drawText("Press ESC to exit", y=0.8)
+        display.update()
+        newConnectMessage = False
+               
 def connectMessage(msg):
-    if args.background_connect:
-        return
-    if not MYFONT:
+    global connectMessage
+    if not TK:
         print(msg)
     else:
-        surface.fill(BLACK)
-        drawText(msg)
-        drawText("Make sure Wii is turned off", y=0.7)
-        drawText("Press ESC to exit", y=0.8)
-        pygame.display.flip()
+        connectMessage = msg
+        newConnectMessage = True
 
 def connect(backgroundTimeout=0,silent=False):
     global wm, lastMessage, CENTER_X, CENTER_Y, crash, calibrationHomography
@@ -1472,7 +1447,7 @@ if __name__ == '__main__':
     parser.add_argument("--benchmark", action="store_true", help="Benchmark")
     parser.add_argument("-f", "--flexible-led-placement", action="store_true", help="Do not assume the top and bottom LED pairs are horizontal")
     parser.add_argument("-o", "--horizontal", action="store_true", help="Horizontal mode (without lightgun)")
-    parser.add_argument("-t", "--terminal", action="store_true", help="Use terminal rather than pygame (doesn't work for calibration)")
+    parser.add_argument("-t", "--terminal", action="store_true", help="Use terminal rather than tkinter (doesn't work for calibration)")
     parser.add_argument("-m", "--mouse-name", help="Set name of mouse device", default="LightgunMouse")
     parser.add_argument("-b", "--buttons-name", help="Set name of buttons device", default="WiimoteButtons")
     parser.add_argument("-l", "--led-file", help="Configuration file for LEDs", default=LED_FILE)
@@ -1514,26 +1489,25 @@ if __name__ == '__main__':
         ledLocations = CONFIG.ledLocations
 
     if not args.terminal and (not args.background_connect or not ledLocations or args.center):
-        pygame.init()
-        atexit.register(pygame.quit)
+        display.init()
+        TK = True
+        atexit.register(display.close)
         WINDOW_SIZE = getDisplaySize()
         CONFIG.aspect = float(WINDOW_SIZE[0])/WINDOW_SIZE[1]
-        MYFONT = pygame.font.SysFont(pygame.font.get_default_font(),int(FONT_SIZE*WINDOW_SIZE[1]))                
-        surface = pygame.display.set_mode(WINDOW_SIZE, pygame.FULLSCREEN)
-        pygame.mouse.set_visible(False)
         
     thread = threading.Thread(target=connect, args=(args.background_connect,))
     thread.daemon = True
     thread.start()
 
-    if not args.terminal and (not args.background_connect or not ledLocations or args.center):
+    if TK:
         running = True
         if not args.background_connect:
             while running and wm is None:
                 checkQuitAndKeys()
-                CONNECTED_EVENT.wait(0.5)
+                CONNECTED_EVENT.wait(0.02)
                 if crash:
                     sys.exit(1)
+                updateConnectMessages()
             if not running:
                 sys.exit(0)
     elif not args.background_connect:
@@ -1571,8 +1545,9 @@ if __name__ == '__main__':
             demo()
         else:
             if not args.terminal:
-                pygame.quit()
-                atexit.unregister(pygame.quit)
+                display.close()
+                atexit.unregister(display.close())
+                TK = False
             if args.command:
                 thread = threading.Thread(target=run, args=(args.command,))
                 thread.daemon = True
