@@ -13,9 +13,11 @@ RED = (255,0,0)
 GRAY = (64,64,64)
 DARK_GREEN = (0,64,0)
 VERY_DARK_GREEN = (0,32,0)
-SIZE = None
+WINDOW_SIZE = None
+SCREEN_SIZE = None
 running = False
 keys = ""
+canvas = None
 
 def keyPressed(event):
     global keys
@@ -34,15 +36,19 @@ def rgb(c):
     return "#%02x%02x%02x" % c
     
 def close(event=None):
-    global running
+    global running,canvas
     try:
         tk.destroy()
     except:
         pass
     running = False
+    canvas = None
 
-def init():
-    global tk,canvas,MYFONT,thread,running,SIZE,PXSCALE
+def getScreenSize():
+    return SCREEN_SIZE
+
+def init(ratio=1,cursor=True,name=None):
+    global tk,SCREEN_SIZE
     if os.name == 'nt':
         import ctypes
         try:
@@ -53,36 +59,54 @@ def init():
             except Exception:
                 pass
     tk = Tk()
+    if name is not None:
+        tk.title(name)
     if os.name != 'nt':
         tk.tk.call("tk", "scaling", 1.0)
-    tk.attributes("-fullscreen", True)
-    tk.config(cursor="none")
 
-    SIZE = tk.winfo_screenwidth(), tk.winfo_screenheight()
+    SCREEN_SIZE = tk.winfo_screenwidth(), tk.winfo_screenheight()
+        
+def setWindow(ratio=1):
+    global canvas,MYFONT,thread,running,WINDOW_SIZE,PXSCALE
+    
+    if canvas is not None:
+        canvas.destroy()
 
-    canvas = Canvas(tk, width=SIZE[0], height=SIZE[1], highlightthickness=0)
-    canvas.configure(bg="black")
-    canvas.pack()
-    keys = None
-    MYFONT = FONT_TEMPLATE % int(SIZE[1] * FONT_SIZE)
-    PXSCALE = math.floor(SIZE[1]/1050)
-    if PXSCALE < 1:
-        PXSCALE = 1
+    if ratio == 1:
+        tk.attributes("-fullscreen", True)
+        tk.config(cursor="none")
+        WINDOW_SIZE = SCREEN_SIZE
+    else:
+        WINDOW_SIZE = int(SCREEN_SIZE[0] * ratio),int(SCREEN_SIZE[1] * ratio)
+        tk.config(cursor="arrow")
+        x = (SCREEN_SIZE[0] - WINDOW_SIZE[0]) // 2
+        y = (SCREEN_SIZE[1] - WINDOW_SIZE[1]) // 2
+
+        tk.geometry(f"{WINDOW_SIZE[0]}x{WINDOW_SIZE[1]}+{x}+{y}")
     
     tk.bind("<Escape>", close)
     tk.bind("<Key>", keyPressed)
     tk.protocol("WM_DELETE_WINDOW", close)
     running = True
-    
-    return SIZE
+
+    canvas = Canvas(tk, width=WINDOW_SIZE[0], height=WINDOW_SIZE[1], highlightthickness=0)
+    canvas.configure(bg="black")
+    canvas.pack()
+    keys = None
+    MYFONT = FONT_TEMPLATE % int(WINDOW_SIZE[1] * FONT_SIZE)
+    PXSCALE = math.floor(WINDOW_SIZE[1]/1050)
+    if PXSCALE < 1:
+        PXSCALE = 1
+        
+    return WINDOW_SIZE
     
 def drawCameraView():  
     global cameraViewHeight,cameraViewCenter
-    cameraViewHeight = int(SIZE[1] * 0.4)
+    cameraViewHeight = int(WINDOW_SIZE[1] * 0.4)
     width = cameraViewHeight * 4 // 3
-    x = SIZE[0] // 2 - width//2
-    y = SIZE[1] // 4 - cameraViewHeight//2
-    cameraViewCenter = (SIZE[0]//2,SIZE[1]//4)
+    x = WINDOW_SIZE[0] // 2 - width//2
+    y = WINDOW_SIZE[1] // 4 - cameraViewHeight//2
+    cameraViewCenter = (WINDOW_SIZE[0]//2,WINDOW_SIZE[1]//4)
     canvas.delete("cameraView")
     canvas.create_rectangle(x,y,x+width,y+cameraViewHeight,fill=rgb(VERY_DARK_GREEN),width=0,tags="cameraView")
     
@@ -103,9 +127,9 @@ def drawVerticalArrow(xy,length,tag=None,color=WHITE):
 def drawCross(xy,color=RED):
     thickness=3
     size=0.25
-    l = size*SIZE[1]/2.
-    x = xy[0]*SIZE[0]
-    y = (1-xy[1])*SIZE[1]
+    l = size*WINDOW_SIZE[1]/2.
+    x = xy[0]*WINDOW_SIZE[0]
+    y = (1-xy[1])*WINDOW_SIZE[1]
     t = thickness*PXSCALE
     c = rgb(color)
     canvas.delete("cross")
@@ -133,7 +157,7 @@ def drawText(s,x=.5,y=.5,color=WHITE):
     tag = "text_"+str(x)+","+str(y)
     canvas.delete(tag)
     if s is not None:
-        canvas.create_text(x*SIZE[0],y*SIZE[1],text=s,fill=rgb(color),font=MYFONT,anchor="n",tags=tag)
+        canvas.create_text(x*WINDOW_SIZE[0],y*WINDOW_SIZE[1],text=s,fill=rgb(color),font=MYFONT,anchor="n",tags=tag)
         
 def clear(color=BLACK):
     canvas.delete("all")
@@ -149,10 +173,13 @@ def delete(tag):
     
 if __name__ == '__main__':
     init()
+    print(SCREEN_SIZE)
+    setWindow(ratio=0.5)
     drawCameraView()
     drawCross((0.25,0.25))
     drawPoint(.25,.25,1,1,True,True)
     update()
+    setWindow(ratio=0.75)
     time.sleep(1)
     drawCross((0.26,0.26))
     drawVerticalArrow((12,12),100,"1")

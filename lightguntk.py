@@ -38,7 +38,7 @@ GRAY = (64,64,64)
 DARK_GREEN = (0,64,0)
 VERY_DARK_GREEN = (0,32,0)
 TK = False
-WINDOW_SIZE = None
+SCREEN_SIZE = None
 PXSCALE = 1
 ACCEL_FILTER_TIME = 0.25
 ACCEL_CUTOFF_FREQ = 12
@@ -884,9 +884,6 @@ def getIRQuad(ir):
                 lastQuad[identified[i]] = points[i]
     return lastQuad
     
-def getDisplaySize():
-    return display.SIZE
-
 def screenshot():
     pass
     
@@ -902,10 +899,10 @@ def drawArrow(xy,bottom,color=WHITE):
     x,y = xy
     if bottom:
         length = -y
-        edgeY = WINDOW_SIZE[1]-1
+        edgeY = SCREEN_SIZE[1]-1
         signY = -1
     else:
-        length = y-WINDOW_SIZE[1]
+        length = y-SCREEN_SIZE[1]
         edgeY = 0
         signY = 1
     display.drawVerticalArrow((x,edgeY),length*signY,color=color)
@@ -913,8 +910,8 @@ def drawArrow(xy,bottom,color=WHITE):
 def measure(flexible=False,screenWidth=1.):
     global running
     
-    size = WINDOW_SIZE
-    scale = float(screenWidth)/WINDOW_SIZE[0]
+    size = SCREEN_SIZE
+    scale = float(screenWidth)/SCREEN_SIZE[0]
     corner = 0
 
     ledPixel = [[int(size[0]*1./3),int(-0.1*size[1])],[int(size[0]*2./3),int(-0.1*size[1])],[int(size[0]*2./3),int(1.1*size[1])],[int(size[0]*1./3),int(1.1*size[1])]]
@@ -939,6 +936,7 @@ def measure(flexible=False,screenWidth=1.):
     done = False
     yCorrection = int(math.floor(CONFIG.yCorrection*size[1] + 0.5))
     
+    display.setWindow()
     display.clear(DARK_GREEN)
     display.drawCameraView()
 
@@ -989,12 +987,12 @@ def measure(flexible=False,screenWidth=1.):
                 bottom = xy[1] < .5
             if xy[1] > 0 and bottom:
                 xy[1] = 0
-            if xy[1] < WINDOW_SIZE[1]-1 and not bottom:
-                xy[1] = WINDOW_SIZE[1]-1
+            if xy[1] < SCREEN_SIZE[1]-1 and not bottom:
+                xy[1] = SCREEN_SIZE[1]-1
             if xy[0] < 0:
                 xy[0] = 0
-            if xy[0] >= WINDOW_SIZE[0]:
-                xy[0] = WINDOW_SIZE[0]-1
+            if xy[0] >= SCREEN_SIZE[0]:
+                xy[0] = SCREEN_SIZE[0]-1
             if not flexible:
                 ledPixel[i^1][1] = xy[1]
             if i == corner:
@@ -1112,6 +1110,10 @@ def calibrate(flexible=False):
 
     lastCalibrated = time.monotonic()
 
+    display.setWindow()
+    display.clear(BLACK)
+    display.drawCameraView()
+
     while running:
         wiimoteWait(0.25)
         ir = wm.state.get("ir", [None,None,None,None])
@@ -1119,8 +1121,6 @@ def calibrate(flexible=False):
         newButtons = buttons & ~prevButtons
         prevButtons = buttons
         checkQuitAndKeys()
-        display.clear(BLACK)
-        display.drawCameraView()
         updateAcceleration(wm.state)
         irQuad = getIRQuad(ir)
         showPoints(ir,irQuad)
@@ -1150,8 +1150,8 @@ def calibrate(flexible=False):
             if not flexible:
                 leds = computeLEDs(calibrationData,flexible)
                 for i in range(4):
-                   x = int(leds[i][0] * WINDOW_SIZE[0])
-                   y = int((1-leds[i][1]) * WINDOW_SIZE[1])
+                   x = int(leds[i][0] * SCREEN_SIZE[0])
+                   y = int((1-leds[i][1]) * SCREEN_SIZE[1])
         display.update()
             
     if not running or not len(calibrationData[-1]):
@@ -1175,11 +1175,13 @@ def center():
 
     quads = [None,None]
 
+    display.setWindow()
+    display.clear(BLACK)
+    display.drawCameraView()
+
     while running:
         keys = checkQuitAndKeys()
         updateAcceleration(wm.state)
-        display.clear(BLACK)
-        display.drawCameraView()
         wiimoteWait(0.25)
         if quads[0] is None:
             display.drawText("Put Wiimote top-side-up pointing at LEDs")
@@ -1228,11 +1230,13 @@ def demo():
 
     running = True
 
+    display.setWindow()
+    display.clear(BLACK)
+    display.drawCameraView()
+    display.drawText("Press HOME to exit")
+
     while running:
         wiimoteWait(0.25)
-        display.clear(BLACK)
-        display.drawCameraView()
-        display.drawText("Press HOME to exit")
         buttons = getButtons(wm.state)
         ir = wm.state.get("ir",[None,None,None,None])
         checkQuitAndKeys()
@@ -1250,7 +1254,7 @@ def demo():
 def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", horizontal=False,rumble=False):
     global running
     
-    size = WINDOW_SIZE or (1920,int(0.5+1920/CONFIG.aspect))
+    size = SCREEN_SIZE or (1920,int(0.5+1920/CONFIG.aspect))
 
     def updateLEDs():
         if horizontal:
@@ -1362,10 +1366,9 @@ def updateConnectMessages():
         newConnectMessage = False
                
 def connectMessage(msg):
-    global connectMessage
-    if not TK:
-        print(msg)
-    else:
+    global connectMessage,newConnectMessage
+    print(msg)
+    if TK:
         connectMessage = msg
         newConnectMessage = True
 
@@ -1489,11 +1492,12 @@ if __name__ == '__main__':
         ledLocations = CONFIG.ledLocations
 
     if not args.terminal and (not args.background_connect or not ledLocations or args.center):
-        display.init()
+        display.init(name="LightGun")
+        display.setWindow(0.75)
         TK = True
         atexit.register(display.close)
-        WINDOW_SIZE = getDisplaySize()
-        CONFIG.aspect = float(WINDOW_SIZE[0])/WINDOW_SIZE[1]
+        SCREEN_SIZE = display.getScreenSize()
+        CONFIG.aspect = float(SCREEN_SIZE[0])/SCREEN_SIZE[1]
         
     thread = threading.Thread(target=connect, args=(args.background_connect,))
     thread.daemon = True
