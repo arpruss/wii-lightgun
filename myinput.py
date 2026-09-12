@@ -42,6 +42,12 @@ try:
             
         def emit(self, type, value, syn=False):
             self.device.emit(self,type,value,syn=syn)
+
+        def press(self, button):
+            self.device.emit(button, 1)
+            
+        def release(self, button):
+            self.device.emit(button, 0)
             
 except ModuleNotFoundError:
     import ctypes 
@@ -204,22 +210,6 @@ except ModuleNotFoundError:
         def __exit__(self, exc_type, exc_value, exc_traceback):
             return
             
-        def moveTo(self, x, y):
-            x = int(65535 * max(min(x, self.size[0]-1),0) / (self.size[0]-1))
-            y = int(65535 * max(min(y, self.size[1]-1),0) / (self.size[1]-1))
-            
-            extra = ctypes.c_ulong(0)
-            mi = MouseInput(
-              dx=x,
-              dy=y,
-              mouseData=0,
-              dwFlags=MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE,
-              time=0,
-              dwExtraInfo=ctypes.pointer(extra),
-            )
-            data = INPUT(type=INPUT_MOUSE, mi=mi)
-            ctypes.windll.user32.SendInput(1, ctypes.byref(data), ctypes.sizeof(data))    
-                        
         def press(self, btn):
             send_key(btn, True)
 
