@@ -1360,22 +1360,22 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                     (device if u == myinput.BTN_LEFT or u == myinput.BTN_RIGHT else device2).release(u)
 
 newConnectMessage = True
-connectMessage = ""
+connectMessageText = ""
                
 def updateConnectMessages():
     global newConnectMessage
     if TK and newConnectMessage:
-        display.drawText(connectMessage)
+        display.drawText(connectMessageText)
         display.drawText("Make sure Wii is turned off", y=0.7)
         display.drawText("Press ESC to exit", y=0.8)
         display.update()
         newConnectMessage = False
                
 def connectMessage(msg):
-    global connectMessage,newConnectMessage
+    global connectMessageText,newConnectMessage
     print(msg)
     if TK:
-        connectMessage = msg
+        connectMessageText = msg
         newConnectMessage = True
 
 def connect(backgroundTimeout=0,silent=False):
