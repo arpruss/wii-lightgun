@@ -6,7 +6,7 @@ import threading
 from tkinter import *
 
 FONT_TEMPLATE = "Helvetica %d"
-FONT_SIZE = 0.02
+FONT_SIZE = 0.025
 BLACK = (0,0,0)
 WHITE = (255,255,255)
 RED = (255,0,0)
