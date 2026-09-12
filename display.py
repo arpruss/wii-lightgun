@@ -145,6 +145,7 @@ def drawPoint(x,y,size,n,real,label):
     s = int(size/768*cameraViewHeight)
     if s < 1:
         s = 1
+    s += 1
     rx = x-s//2
     ry = y-s//2
     c = rgb(RED) if real else rgb(GRAY)
