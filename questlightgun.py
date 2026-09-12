@@ -163,7 +163,7 @@ if __name__ == '__main__':
     elif len(sys.argv)>1 and sys.argv[1] == 'udpdetect':
         if not udpInit():
             sys.exit(1)
-        if udpDetect(3):
+        if udpDetect(2):
             sys.exit(0)
         else:
             sys.exit(1)

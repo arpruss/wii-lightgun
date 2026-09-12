@@ -150,7 +150,7 @@ class Config():
         self.aspect = 1920./1080.
         self.prevPosition = None
         self.ledLocations = None
-        self.yCorrection = 0
+        self.yCorrection = 0 # 11.7mm + sights (6.74), vs my 53cm TV height
         self.ledOffset = 0
         try:
             with open(LED_FILE) as f:
@@ -348,7 +348,11 @@ def pointerPosition2LED(p1,p2,led1,led2,g):
         # with the edge of the TV, for a typical viewing distance.
         rayAngle = math.acos(dir1Orig.dot(dir2Orig) / (np.linalg.norm(dir1Orig) * np.linalg.norm(dir2Orig)))
         cameraDistanceFromLEDMidpoint = abs(led1[0]-led2[0]) * CONFIG.aspect / (2. * math.tan(rayAngle / 2))
-        cameraDistanceFromTVCenter = math.sqrt(cameraDistanceFromLEDMidpoint*cameraDistanceFromLEDMidpoint-avgHeight*avgHeight)
+        h = avgHeight-0.5
+        if h<cameraDistanceFromLEDMidpoint:
+            cameraDistanceFromTVCenter = math.sqrt(cameraDistanceFromLEDMidpoint*cameraDistanceFromLEDMidpoint-avgHeight*avgHeight)
+        else:
+            cameraDistanceFromTVCenter = cameraDistanceFromLEDMidpoint
         
         cameraPosition = np.array([CONFIG.aspect*.5,-cameraDistanceFromTVCenter,.5], dtype=FLOAT)
     
