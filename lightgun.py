@@ -14,6 +14,7 @@ import subprocess
 import cv2
 import timeit
 import display
+import traceback
 
 USE_P3P = False # fallback to P3P if only three points are visible; otherwise fallback to P2P with assumption about
                # gun being centered on screen
@@ -37,6 +38,7 @@ RED = (255,0,0)
 GRAY = (64,64,64)
 DARK_GREEN = (0,64,0)
 VERY_DARK_GREEN = (0,32,0)
+DEMO_COLOR = (0,128,0)
 TK = False
 SCREEN_SIZE = None
 PXSCALE = 1
@@ -63,7 +65,7 @@ NUNCHUK_Z = wiimote.NUNCHUK_BTN_Z << NUNCHUK_SHIFT
 NUNCHUK_DEADZONE = 40
 NUNCHUK_HYSTERESIS = 10
 ASPECT_RATIO = 1920./1080
-FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4, 1634.5??
+FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4 (nominal 1700)
 CAMERA_HEIGHT_PIXELS = 768
 USE_P4P = False # use P4P instead of homography by default
 FLOAT = np.float64
@@ -824,7 +826,7 @@ def getIRQuad(ir):
             if 0 in identified and 1 in identified:
                 lastQuad = [points[identified.index(0)],points[identified.index(1)],None,None]
             elif 2 in identified and 3 in identified:
-                lastQuad = [points[identified.index(2)],points[identified.index(3)],None,None]
+                lastQuad = [points[identified.index(3)],points[identified.index(2)],None,None]
             else:
                 lastQuad = None
         elif count == 4:
@@ -1235,7 +1237,7 @@ def demo():
     running = True
 
     display.setWindow()
-    display.clear(BLACK)
+    display.clear(DEMO_COLOR)
     display.drawCameraView()
     display.drawText("Press HOME to exit")
 
@@ -1410,8 +1412,8 @@ def connect(backgroundTimeout=0,silent=False):
                 wm = FakeWiimote()
                 CONNECTED_EVENT.set()
                 return
-        except Exception as e:
-            print("Error in thread: ",e)
+        except Exception:
+            print(traceback.format_exc())
             crash = True
             CONNECTED_EVENT.set()
             print("Exiting thread")
