@@ -150,7 +150,7 @@ class Config():
         self.aspect = 1920./1080.
         self.prevPosition = None
         self.ledLocations = None
-        self.yCorrection = 0 # 11.7mm + sights (6.74), vs my 53cm TV height
+        self.yCorrection = 0 # (11.7mm camera center from top of Wiimote case + 6.74mm sights) / 530mm TV height, so my yCorrection=0.0348
         self.ledOffset = 0
         try:
             with open(LED_FILE) as f:
