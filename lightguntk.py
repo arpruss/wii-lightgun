@@ -1459,6 +1459,7 @@ if __name__ == '__main__':
     parser.add_argument("-s", "--sensitivity", type=int, default=-1, help="IR sensitivity (1-5)")
     parser.add_argument("--p3p", action="store_true", help="Allow P3P as fallback")
     parser.add_argument("--p2pa", action="store_true", help="Allow P2PA as fallback")
+    parser.add_argument("--use-calibration", action="store_true", help="Use Wiimote EEPROM calibration data")
     parser.add_argument("command", help="Run this command while simulating a mouse", nargs="?")
     args = parser.parse_args()
 
@@ -1481,6 +1482,9 @@ if __name__ == '__main__':
 
     if args.sensitivity >= 0:
         wiimote.set_ir_sensitivity(args.sensitivity)
+        
+    if args.use_calibration:
+        USE_CALIBRATION_HOMOGRAPHY = True
         
     if args.calibrate and args.two_point:
         print("Calibration is not compatible with two-point mode.")
