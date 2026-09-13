@@ -1025,9 +1025,9 @@ def measure(flexible=False,screenWidth=1.):
                 display.drawText("1/2: LEDs on top/bottom",y=0.5+TEXT_SPACING*4)
             display.drawText("LED is %.4g units (%.1f px) off-screen" % (selectedLength*scale, selectedLength),y=0.5+TEXT_SPACING*5)
         else:
-            display.drawText("Up/Down: adjust Y correction",y=0.5)
+            display.drawText("Up/Down: adjust sightline parallax",y=0.5)
             display.drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
-            display.drawText("Y correction is %.4g units (%.1f px)" % (yCorrection*scale, yCorrection),y=0.5+TEXT_SPACING*4)
+            display.drawText("parallax is %.4g units (%.1f px)" % (yCorrection*scale, yCorrection),y=0.5+TEXT_SPACING*4)
             display.drawText(None,y=0.5+TEXT_SPACING*5)
             ax = int(size[0]//4)
             ay = int(size[1]*0.5-yCorrection/2)            
