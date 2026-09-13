@@ -10,7 +10,7 @@ FONT_SIZE = 0.025
 BLACK = (0,0,0)
 WHITE = (255,255,255)
 RED = (255,0,0)
-GRAY = (64,64,64)
+GRAY = (72,72,72)
 DARK_GREEN = (0,64,0)
 VERY_DARK_GREEN = (0,32,0)
 WINDOW_SIZE = None
@@ -137,6 +137,20 @@ def drawRect(x,y,w,h,tag=None,color=WHITE):
     if tag is not None:
         canvas.delete(tag)
     canvas.create_rectangle(x,y,x+w,y+h,fill=rgb(color),width=0,tags=tag)
+    
+def drawStatusBar():
+    canvas.create_rectangle(0,int(WINDOW_SIZE[1]*(1-FONT_SIZE*2.6)),WINDOW_SIZE[0],WINDOW_SIZE[1],fill=rgb(VERY_DARK_GREEN),width=0,tags="statusBar")
+    
+def labelStatusBar(left=None,center=None,right=None):
+    if left is not None:
+        canvas.delete("statusBarLeft")
+        canvas.create_text(5,WINDOW_SIZE[1]-5,text=left,fill="white",font=MYFONT,anchor="sw",tags="statusBarLeft")
+    if center is not None:
+        canvas.delete("statusBarCenter")
+        canvas.create_text(WINDOW_SIZE[0]//2,WINDOW_SIZE[1]-5,text=center,fill="white",font=MYFONT,anchor="s",tags="statusBarCenter")
+    if right is not None:
+        canvas.delete("statusBarRight")
+        canvas.create_text(WINDOW_SIZE[0]-5,WINDOW_SIZE[1]-5,text=right,fill="white",font=MYFONT,anchor="se",tags="statusBarLeft")
     
 def drawVerticalArrow(xy,length,tag=None,color=WHITE):
     if tag is not None:

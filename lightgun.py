@@ -35,7 +35,7 @@ CALIBRATION_FILE = os.sep.join((os.path.expanduser("~"),".wiilightgun","wiimotec
 BLACK = (0,0,0)
 WHITE = (255,255,255)
 RED = (255,0,0)
-GRAY = (64,64,64)
+LIGHTER_GRAY = (96,96,96)
 DARK_GREEN = (0,64,0)
 VERY_DARK_GREEN = (0,32,0)
 DEMO_COLOR = (0,128,0)
@@ -368,7 +368,7 @@ def pointerPosition2LED(p1,p2,led1,led2,g):
         cameraDistanceFromLEDMidpoint = abs(led1[0]-led2[0]) * CONFIG.aspect / (2. * math.tan(rayAngle / 2))
         h = avgHeight-0.5
         if h<cameraDistanceFromLEDMidpoint:
-            cameraDistanceFromTVCenter = math.sqrt(cameraDistanceFromLEDMidpoint*cameraDistanceFromLEDMidpoint-avgHeight*avgHeight)
+            cameraDistanceFromTVCenter = math.sqrt(cameraDistanceFromLEDMidpoint*cameraDistanceFromLEDMidpoint-h*h)
         else:
             cameraDistanceFromTVCenter = cameraDistanceFromLEDMidpoint
         
@@ -962,6 +962,8 @@ def measure(flexible=False,screenWidth=1.):
     display.setWindow()
     display.clear(DARK_GREEN)
     display.drawCameraView()
+    display.drawStatusBar()
+    display.labelStatusBar(left="\u2212: Prev", right="+: Next")
 
     while running:
         time.sleep(0.005)
@@ -1029,24 +1031,24 @@ def measure(flexible=False,screenWidth=1.):
             else:
                 length = y-size[1]
                 signY = -1
-            drawArrow(xy,bottom,color=WHITE if i==corner else GRAY)
+            drawArrow(xy,bottom,color=WHITE if i==corner else LIGHTER_GRAY)
             if i == corner:
                 selectedLength = length
         
         if corner<4:
+            display.labelStatusBar(center="LED #"+str(corner+1))
             display.delete("cameraCross")
             display.delete("yCorrection")
             display.delete("yCorrection2")
             display.drawText("DPad: move LED location",y=0.5)
-            display.drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
             display.drawText(None,y=0.5+TEXT_SPACING*4)
             if NUM_POINTS == 2:
                 display.drawText("1/2: LEDs on top/bottom",y=0.5+TEXT_SPACING*4)
-            display.drawText("LED is %.4g units (%.1f px) off-screen" % (selectedLength*scale, selectedLength),y=0.5+TEXT_SPACING*5)
+            display.drawText("LED #%d is %.4g units (%.1f px) off-screen" % (corner+1,selectedLength*scale, selectedLength),y=0.5+TEXT_SPACING*5)
         elif corner==4:
+            display.labelStatusBar(center="Sightline Parallax")
             display.delete("cameraCross")
             display.drawText("Up/Down: adjust sightline parallax",y=0.5)
-            display.drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
             display.drawText("parallax is %.4g units (%.1f px)" % (yCorrection*scale, yCorrection),y=0.5+TEXT_SPACING*4)
             display.drawText(None,y=0.5+TEXT_SPACING*5)
             ax = int(size[0]//4)
@@ -1055,6 +1057,7 @@ def measure(flexible=False,screenWidth=1.):
             display.drawRect(ax-b//2,ay+yCorrection//2-b//2,b,b,color=VERY_DARK_GREEN, tag="yCorrection")
             display.drawVerticalArrow((ax,ay),yCorrection,color=WHITE, tag="yCorrection2")
         else:
+            display.labelStatusBar(center="Camera Centering")
             display.delete("yCorrection")
             display.delete("yCorrection2")
             if move[0]:
@@ -1063,7 +1066,6 @@ def measure(flexible=False,screenWidth=1.):
                 CENTER_Y = int(CENTER_Y+.5) + move[1]
             display.drawText("DPad: adjust centering",y=0.5)
             display.drawText("1: 512,384; 2: %d,%d"%(int(eeprom[0]+.5),int(eeprom[1]+.5)),y=0.5+TEXT_SPACING*4)
-            display.drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
             display.drawText("center is (%d,%d)" % (int(CENTER_X+.5), int(CENTER_Y+.5)),y=0.5+TEXT_SPACING*5)
             display.drawCameraCross((int(CENTER_X+.5), int(CENTER_Y+.5)), tag="cameraCross")
 
@@ -1172,7 +1174,7 @@ def calibrate(flexible=False):
         showPoints(ir,irQuad)
         debounced = 0.5 + lastCalibrated < time.monotonic()
         valid = irQuad and debounced
-        display.drawCross(CALIBRATION_CORNERS[corner],color=RED if valid else GRAY)
+        display.drawCross(CALIBRATION_CORNERS[corner],color=RED if valid else LIGHTER_GRAY)
         if debounced:
             display.drawText("Press trigger (B"+(" or C" if 'nunchuk' in wm.state else "")+") while pointing at red calibration mark" if irQuad else "Point Wiimote at calibration mark from far enough away")
         if newButtons & wiimote.BTN_MINUS and len(calibrationData[0]):
