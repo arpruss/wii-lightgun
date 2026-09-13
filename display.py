@@ -136,6 +136,18 @@ def drawCross(xy,color=RED):
     canvas.create_rectangle(x-l//2,y-t//2,x-l//2+l,y-t//2+t,width=0,fill=c,tags="cross")
     canvas.create_rectangle(x-t//2,y-l//2,x-t//2+t,y-l//2+l,width=0,fill=c,tags="cross")
     
+def drawCameraCross(xy,color=BLACK,tag="cameraCross"):
+    x = int(cameraViewCenter[0] + ((xy[0]-512.) / 768.)* cameraViewHeight)
+    y = int(cameraViewCenter[1] + ((384.-xy[1]) / 768.) * cameraViewHeight)
+    thickness=3
+    size=0.2
+    l = size*WINDOW_SIZE[1]/2.
+    t = thickness*PXSCALE
+    c = rgb(color)
+    canvas.delete(tag)
+    canvas.create_rectangle(x-l//2,y-t//2,x-l//2+l,y-t//2+t,width=0,fill=c,tags=tag)
+    canvas.create_rectangle(x-t//2,y-l//2,x-t//2+t,y-l//2+l,width=0,fill=c,tags=tag)
+    
 def clearPoints():
     canvas.delete("points")
     

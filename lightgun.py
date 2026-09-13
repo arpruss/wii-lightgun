@@ -200,7 +200,7 @@ class Config():
         if self.ledLocations:
             with open(LED_FILE, "w") as f:
                 f.write("1,1\n")
-                if i in range(NUM_POINTS):
+                for i in range(NUM_POINTS):
                     l = self.ledLocations[i]
                     f.write("%g,%g\n" % tuple(l))
                 if NUM_POINTS == 2:
@@ -914,7 +914,7 @@ def drawArrow(xy,bottom,color=WHITE):
     display.drawVerticalArrow((x,edgeY),length*signY,color=color)
     
 def measure(flexible=False,screenWidth=1.):
-    global running
+    global running,CENTER_X,CENTER_Y
     
     size = SCREEN_SIZE
     scale = float(screenWidth)/SCREEN_SIZE[0]
@@ -935,8 +935,9 @@ def measure(flexible=False,screenWidth=1.):
     if crash:
         sys.exit(0)
     
+    eeprom = Homography(DEFAULT_IR_CALIBRATION,wm.irCalibration).apply((512,384))
     if not CONFIG.haveCenter(wm):
-        center()    
+        CENTER_X,CENTER_Y=eeprom
     
     nextRepeat = 0
     done = False
@@ -963,7 +964,7 @@ def measure(flexible=False,screenWidth=1.):
                 display.drawCross(s,color=RED)
 
         display.drawText("HOME: quit without saving", y=0.5+TEXT_SPACING*2)
-        display.drawText("A: done", y=0.5+TEXT_SPACING*3)
+        display.drawText("A: exit and save", y=0.5+TEXT_SPACING*3)
 
         buttons = getButtons(wm.state)
         pressed = buttons &~ prevButtons
@@ -999,11 +1000,12 @@ def measure(flexible=False,screenWidth=1.):
                 xy[0] = 0
             if xy[0] >= SCREEN_SIZE[0]:
                 xy[0] = SCREEN_SIZE[0]-1
-            if not flexible:
-                ledPixel[i^1][1] = xy[1]
             if i == corner:
                 xy[0] += move[0]
                 xy[1] += move[1]
+            ledPixel[i] = xy
+            if not flexible:
+                ledPixel[i^1][1] = xy[1]
             x,y = xy
             if bottom:
                 length = -y
@@ -1016,6 +1018,7 @@ def measure(flexible=False,screenWidth=1.):
                 selectedLength = length
         
         if corner<4:
+            display.delete("cameraCross")
             display.delete("yCorrection")
             display.delete("yCorrection2")
             display.drawText("DPad: move LED location",y=0.5)
@@ -1024,7 +1027,8 @@ def measure(flexible=False,screenWidth=1.):
             if NUM_POINTS == 2:
                 display.drawText("1/2: LEDs on top/bottom",y=0.5+TEXT_SPACING*4)
             display.drawText("LED is %.4g units (%.1f px) off-screen" % (selectedLength*scale, selectedLength),y=0.5+TEXT_SPACING*5)
-        else:
+        elif corner==4:
+            display.delete("cameraCross")
             display.drawText("Up/Down: adjust sightline parallax",y=0.5)
             display.drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
             display.drawText("parallax is %.4g units (%.1f px)" % (yCorrection*scale, yCorrection),y=0.5+TEXT_SPACING*4)
@@ -1034,25 +1038,43 @@ def measure(flexible=False,screenWidth=1.):
             b = int(min(size[1] * .2, yCorrection + size[1] * .1))
             display.drawRect(ax-b//2,ay+yCorrection//2-b//2,b,b,color=VERY_DARK_GREEN, tag="yCorrection")
             display.drawVerticalArrow((ax,ay),yCorrection,color=WHITE, tag="yCorrection2")
+        else:
+            display.delete("yCorrection")
+            display.delete("yCorrection2")
+            if move[0]:
+                CENTER_X = int(CENTER_X+.5) + move[0]
+            if move[1]:
+                CENTER_Y = int(CENTER_Y+.5) + move[1]
+            display.drawText("DPad: adjust centering",y=0.5)
+            display.drawText("1: 512,384; 2: %d,%d"%(int(eeprom[0]+.5),int(eeprom[1]+.5)),y=0.5+TEXT_SPACING*4)
+            display.drawText("-/+: next/previous setting",y=0.5+TEXT_SPACING)
+            display.drawText("center is (%d,%d)" % (int(CENTER_X+.5), int(CENTER_Y+.5)),y=0.5+TEXT_SPACING*5)
+            display.drawCameraCross((int(CENTER_X+.5), int(CENTER_Y+.5)), tag="cameraCross")
 
         if pressed & wiimote.BTN_PLUS:
-            corner = (corner+1) % 5
+            corner = (corner+1) % 6
             if NUM_POINTS == 2 and corner == 2:
                     corner = 4
         elif pressed & wiimote.BTN_MINUS:
-            corner = (corner-1) % 5
+            corner = (corner+6-1) % 6
             if NUM_POINTS == 2 and corner == 3:
                 corner = 1
         elif pressed & wiimote.BTN_1:
-            if ledPixel[0][1] < .5*size[1]:
-                ledPixel[0][1] = size[1]-ledPixel[0][1]
-            if ledPixel[1][1] < .5*size[1]:
-                ledPixel[1][1] = size[1]-ledPixel[1][1]
+            if corner < 4:
+                if ledPixel[0][1] < .5*size[1]:
+                    ledPixel[0][1] = size[1]-ledPixel[0][1]
+                if ledPixel[1][1] < .5*size[1]:
+                    ledPixel[1][1] = size[1]-ledPixel[1][1]
+            elif corner == 5:
+                CENTER_X,CENTER_Y = 512,384
         elif pressed & wiimote.BTN_2:
-            if ledPixel[0][1] > .5*size[1]:
-                ledPixel[0][1] = size[1]-ledPixel[0][1]
-            if ledPixel[1][1] > .5*size[1]:
-                ledPixel[1][1] = size[1]-ledPixel[1][1]
+            if corner < 4:
+                if ledPixel[0][1] > .5*size[1]:
+                    ledPixel[0][1] = size[1]-ledPixel[0][1]
+                if ledPixel[1][1] > .5*size[1]:
+                    ledPixel[1][1] = size[1]-ledPixel[1][1]
+            elif corner == 5:
+                CENTER_X,CENTER_Y = eeprom
         elif ( pressed & wiimote.BTN_A ):
             done = True
             break              
@@ -1065,6 +1087,8 @@ def measure(flexible=False,screenWidth=1.):
     CONFIG.setLEDLocations(ledPixel,size)
     CONFIG.yCorrection = yCorrection / size[1]
     CONFIG.saveLEDs()
+    CONFIG.setCenter(wm, (CENTER_X, CENTER_Y))
+    CONFIG.saveCalibration()
         
     return True
                 
@@ -1449,8 +1473,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Calibrate and use Wiimote with two/four IR LEDs around screen.")
     parser.add_argument("--two-point", action="store_true", help="Force two LED mode [experimental]")
     parser.add_argument("-c", "--calibrate", action="store_true", help="Force calibration")
-    parser.add_argument("-C", "--center", action="store_true", help="Center calibration for individual Wiimote")
-    parser.add_argument("-M", "--measure", action="store_true", help="Calibrate by manual measurement of IR LED positions.")
+    parser.add_argument("-C", "--center", action="store_true", help="Perform center calibration for individual Wiimote")
+    parser.add_argument("-M", "--measure", action="store_true", help="Manually measure IR LED positions.")
     parser.add_argument("-w", "--width", type=float, default=1, help="Screen width for measurement calibration in preferred units.")
     parser.add_argument("-d", "--demo", action="store_true", help="Demo")
     parser.add_argument("--benchmark", action="store_true", help="Benchmark")
