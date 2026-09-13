@@ -70,6 +70,11 @@ CAMERA_HEIGHT_PIXELS = 768
 USE_P4P = False # use P4P instead of homography by default
 FLOAT = np.float64
 
+WIIMOTE_LENGTH_MM = 148 # mm
+WIIMOTE_Y_OFFSET_FROM_CAMERA = 11.7 # mm
+WIIMOTE_SIGHT_HEIGHT_DEFAULT = 4.75 # mm
+
+
 DEFAULT_IR_CALIBRATION = ((127,93),(896,93),(896,674),(127,674))
 CALIBRATION_CORNERS = ((0.125,0.05), (0.875,0.05), (0.875,0.95), (0.125,0.95))
 UNIT_SQUARE = ((0,0), (1,0), (1,1), (0,1))
@@ -152,7 +157,9 @@ class Config():
         self.aspect = 1920./1080.
         self.prevPosition = None
         self.ledLocations = None
-        self.yCorrection = 0 # (11.7mm camera center from top of Wiimote case + 6.74mm sights) / 530mm TV height, so my yCorrection=0.0348
+        self.yCorrection = None 
+        self.wiimoteLength = None
+        self.screenHeightMM = None
         self.ledOffset = 0
         try:
             with open(LED_FILE) as f:
@@ -174,10 +181,19 @@ class Config():
                             self.aspect = float(l[1])
                         elif l[0].lower() == "offset":
                             self.ledOffset = float(l[1])/s[1]
+                        elif l[0].lower() == "heightmm":
+                            self.wiimoteLength = float(l[1])/s[1]
+                        elif l[0].lower() == "sightheightmm":
+                            self.sightHeightMM = float(l[1])
                 except:
                     pass
         except Exception as e:
             pass
+        # (11.7mm camera center from top of Wiimote case + 6.74mm sights) / 530mm TV height, so my yCorrection=0.0348
+        if self.screenHeightMM is not None:
+            self.yCorrection = (self.sightHeightMM + WIIMOTE_Y_OFFSET_FROM_CAMERA) / self.screenHeightMM
+        elif self.yCorrection is None:
+            self.yCorrection = 0
 
     def haveCenter(self,wm):
         return wm.id in self.center
