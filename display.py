@@ -71,11 +71,11 @@ def init(ratio=1,cursor=True,name=None):
 
     SCREEN_SIZE = tk.winfo_screenwidth(), tk.winfo_screenheight()
 
-def drawWiimote(xy,height,sightsMM):
+def drawWiimote(height,sightsMM):
     canvas.delete("wiimote")
-    x0 = xy[0]
-    y0 = xy[1]
     scale = height/WIIMOTE_LENGTH
+    x0 = 10
+    y0 = WINDOW_SIZE[1]//2-height//2
     coordinates = []
     for y,x in WIIMOTE:
         coordinates.append(x0+(x)*scale)
@@ -235,7 +235,7 @@ if __name__ == '__main__':
     drawVerticalArrow((12,12),100,"1")
     drawPoint(.3,.3,1,1,False,True)
     drawText("Hello",y=.5)
-    drawWiimote((800,10),500,6)
+    drawWiimote( 500,6)
     while running:
         update()
         time.sleep(0.01)
