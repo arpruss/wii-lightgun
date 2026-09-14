@@ -7,6 +7,7 @@ from tkinter import *
 
 FONT_TEMPLATE = "Helvetica %d"
 FONT_SIZE = 0.025
+LINE_HEIGHT = FONT_SIZE * 2.6
 BLACK = (0,0,0)
 WHITE = (255,255,255)
 RED = (255,0,0)
@@ -139,27 +140,29 @@ def drawRect(x,y,w,h,tag=None,color=WHITE):
     canvas.create_rectangle(x,y,x+w,y+h,fill=rgb(color),width=0,tags=tag)
     
 def drawStatusBar():
-    canvas.create_rectangle(0,int(WINDOW_SIZE[1]*(1-FONT_SIZE*2.6)),WINDOW_SIZE[0],WINDOW_SIZE[1],fill=rgb(VERY_DARK_GREEN),width=0,tags="statusBar")
+    canvas.create_rectangle(0,int(WINDOW_SIZE[1]*(1-LINE_HEIGHT)),WINDOW_SIZE[0],WINDOW_SIZE[1],fill=rgb(VERY_DARK_GREEN),width=0,tags="statusBar")
     
 def labelStatusBar(left=None,center=None,right=None):
+    bottom = WINDOW_SIZE[1] - 5
     if left is not None:
         canvas.delete("statusBarLeft")
-        canvas.create_text(5,WINDOW_SIZE[1]-5,text=left,fill="white",font=MYFONT,anchor="sw",tags="statusBarLeft")
+        canvas.create_text(5,bottom,text=left,fill="white",font=MYFONT,anchor="sw",tags="statusBarLeft")
     if center is not None:
         canvas.delete("statusBarCenter")
-        canvas.create_text(WINDOW_SIZE[0]//2,WINDOW_SIZE[1]-5,text=center,fill="white",font=MYFONT,anchor="s",tags="statusBarCenter")
+        canvas.create_text(WINDOW_SIZE[0]//2,bottom,text=center,fill="white",font=MYFONT,anchor="s",tags="statusBarCenter")
     if right is not None:
         canvas.delete("statusBarRight")
-        canvas.create_text(WINDOW_SIZE[0]-5,WINDOW_SIZE[1]-5,text=right,fill="white",font=MYFONT,anchor="se",tags="statusBarLeft")
+        canvas.create_text(WINDOW_SIZE[0]-5,bottom,text=right,fill="white",font=MYFONT,anchor="se",tags="statusBarLeft")
     
-def drawVerticalArrow(xy,length,tag=None,color=WHITE):
-    if tag is not None:
-        canvas.delete(tag)
+def drawVerticalArrow(xy,length,color=WHITE,tag=None):
     x,y = xy
     c = rgb(color)
     canvas.create_line(x,y,x,y+length,width=2,tags=tag,fill=c)
     canvas.create_line(x,y,x-length//3,y+length//3,width=2,tags=tag,fill=c)
     canvas.create_line(x,y,x+length//3,y+length//3,width=2,tags=tag,fill=c)
+
+def lift(tag):
+    canvas.lift(tag)
 
 def drawCross(xy,color=RED):
     thickness=3
