@@ -1064,8 +1064,6 @@ def measure(flexible=False,screenWidth=1.):
 
             display.labelStatusBar(center="LED #"+str(corner+1))
             display.delete("cameraCross")
-            display.delete("yCorrection")
-            display.delete("yCorrection2")
             display.drawText("DPad: move LED location",y=0.5)
             if NUM_POINTS == 2:
                 display.drawText("1/2: LEDs on top/bottom",y=0.5+TEXT_SPACING)
