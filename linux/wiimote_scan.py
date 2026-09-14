@@ -4,7 +4,7 @@
 import time
 from pydbus import SystemBus
 
-def scan_wiimote_dbus_poll(timeout=10,blacklist=set()):
+def scan_wiimote_dbus_poll(timeout=10,blacklist=set(),connectAndPair=False):
     bus = SystemBus()
     adapter = bus.get('org.bluez', '/org/bluez/hci0')
     manager = bus.get('org.bluez', '/')
@@ -33,6 +33,14 @@ def scan_wiimote_dbus_poll(timeout=10,blacklist=set()):
                         if not found_mac in blacklist:
                             found_name = name
                             print(f"--> Found Wiimote! MAC: {found_mac}")
+                            if connectAndPair:
+                                try:
+                                    device = bus.get('org.bluez', path)
+                                    device.Trusted = True
+                                    device.Connect()
+                                except:
+                                    found_mac = None
+                                    continue
                             break
             
             if found_mac:

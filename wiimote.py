@@ -240,7 +240,11 @@ class Wiimote:
                 pair_wiimote(timeout=connectTimeout,connectCallback=self.connectCallback)
                 mac = None
             else:
-                mac,_ = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
+                self.connectCallback(CONNECT_PRESS_12)
+                mac,_ = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes,connectAndPair=True)
+                if not mac:
+                    print("Cannot find Wiimote")
+                    raise RuntimeError()
                 pass
             t = time.monotonic()
             while not self.handle and time.monotonic() < t + self.timeout:
