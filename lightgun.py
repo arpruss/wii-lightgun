@@ -1092,6 +1092,8 @@ def measure(flexible=False,screenWidth=1.):
                 changedWiimoteLength = True
             if move[0]:
                 CONFIG.sightHeightMM += move[0]*0.1
+                if CONFIG.sightHeightMM < 0.01:
+                    CONFIG.sightHeightMM = 0
                 changedWiimoteLength = True
         else:
             display.labelStatusBar(center="Camera Centering")
