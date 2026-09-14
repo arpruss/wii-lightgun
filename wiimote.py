@@ -1,5 +1,6 @@
 ALWAYS_HIDAPI = False
 
+import re
 import os
 import hashlib
 import time
@@ -95,6 +96,15 @@ def parseAccelCalibration(data):
 def getWord(data, offset):
     return (data[offset] & 0xFF) << 8 | (data[offset+1] & 0xFF)
     
+def macStrip(mac):
+    return re.sub(r'[^A-F0-9]','',mac.upper())
+    
+def macClean(mac):
+    mac = macStrip(mac)
+    if len(mac) != 12:
+        return None
+    return ":".join((mac[i:i+2] for i in range(0,12,2)))
+    
 class Wiimote:
     def __init__(self, timeout=5, connectTimeout=15, connectCallback=None):
         self.connectCallback = connectCallback if connectCallback is not None else lambda msg: None
@@ -173,13 +183,28 @@ class Wiimote:
             except:
                 pass
                 
-    def openWiimote(self):
+    def getSerial(self,dev):
+        if 'serial_number' in dev and dev['serial_number']:
+            return dev['serial_number']
+        handle = hid.device()
+        try:
+            handle.open_path(dev['path'])
+            return handle.get_serial_number_string()
+        except:
+            return "wiimote"
+        finally:
+            handle.close()
+            
+    def openWiimote(self,mac=None):
         for dev in hid.enumerate():
             if dev['vendor_id'] == WIIMOTE_VID and dev['product_id'] in WIIMOTE_PIDS:
-                handle = hid.device()
+                if mac is not None:
+                    if macStrip(mac) != macStrip(getSerial(dev)):
+                        continue
                 path = dev['path']
                 if path in openedWiimotes:
                     continue
+                handle = hid.device()
                 try:
                     handle.open_path(path)
                 except:
@@ -192,6 +217,8 @@ class Wiimote:
                     data = handle.read(32, timeout_ms=500)
                     if not data:
                         raise IOError()
+                    self.id = macClean(handle.get_serial_number_string())
+                    print("id",self.id)
                 except:
                     handle.close()
                     continue
@@ -203,27 +230,26 @@ class Wiimote:
         return None
 
     def initHID(self,connectTimeout=15):
-        self.connectCallback(CONNECT_QUICK)
-        self.handle = self.openWiimote()
+        if os.name == "nt":
+            self.connectCallback(CONNECT_QUICK)
+            self.handle = self.openWiimote()
+        else:
+            self.handle = None
         if not self.handle:
             if os.name == "nt":
                 pair_wiimote(timeout=connectTimeout,connectCallback=self.connectCallback)
+                mac = None
             else:
-                #scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
+                mac,_ = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
                 pass
             t = time.monotonic()
             while not self.handle and time.monotonic() < t + self.timeout:
-                self.handle = self.openWiimote()
+                self.handle = self.openWiimote(mac=mac)
                 if not self.handle:
                     time.sleep(0.1)
             if not self.handle:
                 print("Failed to connect")
                 raise RuntimeError()
-        if os.name == "nt":
-            try:
-                self.id = get_mac_from_hid_path(self.path)
-            except:
-                pass
         
     def recv(self,size):
         if not self.opened:
