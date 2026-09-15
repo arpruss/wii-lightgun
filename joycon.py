@@ -1,0 +1,846 @@
+##
+## unfinished!
+##
+ALWAYS_HIDAPI = False
+
+from collections import namedtuple
+import struct
+import re
+import os
+import hashlib
+import time
+import math
+from wiimote_constants import *
+from threading import Thread
+
+JOYCON_VID = 0x057E
+JOYCON_PIDS = [0x2007,]
+NEUTRAL_RUMBLE = b'\x00\x01\x40\x40\x00\x01\x40\x40'
+IR_POINTING   = 4
+IR_CLUSTERING = 6
+IR_IMAGE      = 7
+
+_IR_FRAGMENT_SIZE = 300
+
+if os.name == 'nt':
+    USE_HID = True
+    from windows.wiipair import pair_joycon
+else:
+    USE_HID = ALWAYS_HIDAPI 
+    from linux.wiimote_scan import scan_wiimote_dbus_poll
+
+if USE_HID:
+    import hid
+else:
+    import socket
+
+openedWiimotes = set()
+
+WIIUSE = False
+
+BALANCE_BOARD_CORNERS = ("top_right","bottom_right","top_left","bottom_left")
+
+IR_CALIBRATION_LOCATIONS = ( ((0,2,4),(1,2,6)),  # X1,Y1
+                             ((3,2,0),(4,2,2)),  # X2,Y2
+                             ((5,7,4),(6,7,6)),  # X3,Y3
+                             ((8,7,0),(9,7,2)) ) # X4,Y4 
+                             
+IR_LEVELS = ( (b"\x02\x00\x00\x71\x01\x00\x64\x00\xFE", b"\xFD\x05"),
+              (b"\x02\x00\x00\x71\x01\x00\x96\x00\xB4", b"\xB3\x04"),
+              (b"\x02\x00\x00\x71\x01\x00\xAA\x00\x64", b"\x63\x03"),
+              (b"\x02\x00\x00\x71\x01\x00\xC8\x00\x36", b"\x35\x03"),
+              (b"\x02\x00\x00\x71\x01\x00\x72\x00\x20", b"\x1F\x03") )
+
+ACCEL_0G_CALIBRATION_LOCATIONS = ( (0,3,4), (1,3,2), (2,3,0) )
+ACCEL_1G_CALIBRATION_LOCATIONS = ( (4,7,4), (5,7,2), (6,7,0) )
+
+CALIBRATION_OFFSET = 0
+IR_CALIBRATION_OFFSET_1 = 0
+IR_CALIBRATION_OFFSET_2 = 11
+IR_CALIBRATION_SIZE = 11
+ACCEL_CALIBRATION_OFFSET = 2 * IR_CALIBRATION_SIZE
+ACCEL_CALIBRATION_SIZE = 10
+CALIBRATION_SIZE = 2 * IR_CALIBRATION_SIZE + ACCEL_CALIBRATION_SIZE
+DEFAULT_IR_LEVEL = 5
+
+crc8_table = [
+    0x00, 0x07, 0x0E, 0x09, 0x1C, 0x1B, 0x12, 0x15, 0x38, 0x3F, 0x36, 0x31, 0x24, 0x23, 0x2A, 0x2D,
+    0x70, 0x77, 0x7E, 0x79, 0x6C, 0x6B, 0x62, 0x65, 0x48, 0x4F, 0x46, 0x41, 0x54, 0x53, 0x5A, 0x5D,
+    0xE0, 0xE7, 0xEE, 0xE9, 0xFC, 0xFB, 0xF2, 0xF5, 0xD8, 0xDF, 0xD6, 0xD1, 0xC4, 0xC3, 0xCA, 0xCD,
+    0x90, 0x97, 0x9E, 0x99, 0x8C, 0x8B, 0x82, 0x85, 0xA8, 0xAF, 0xA6, 0xA1, 0xB4, 0xB3, 0xBA, 0xBD,
+    0xC7, 0xC0, 0xC9, 0xCE, 0xDB, 0xDC, 0xD5, 0xD2, 0xFF, 0xF8, 0xF1, 0xF6, 0xE3, 0xE4, 0xED, 0xEA,
+    0xB7, 0xB0, 0xB9, 0xBE, 0xAB, 0xAC, 0xA5, 0xA2, 0x8F, 0x88, 0x81, 0x86, 0x93, 0x94, 0x9D, 0x9A,
+    0x27, 0x20, 0x29, 0x2E, 0x3B, 0x3C, 0x35, 0x32, 0x1F, 0x18, 0x11, 0x16, 0x03, 0x04, 0x0D, 0x0A,
+    0x57, 0x50, 0x59, 0x5E, 0x4B, 0x4C, 0x45, 0x42, 0x6F, 0x68, 0x61, 0x66, 0x73, 0x74, 0x7D, 0x7A,
+    0x89, 0x8E, 0x87, 0x80, 0x95, 0x92, 0x9B, 0x9C, 0xB1, 0xB6, 0xBF, 0xB8, 0xAD, 0xAA, 0xA3, 0xA4,
+    0xF9, 0xFE, 0xF7, 0xF0, 0xE5, 0xE2, 0xEB, 0xEC, 0xC1, 0xC6, 0xCF, 0xC8, 0xDD, 0xDA, 0xD3, 0xD4,
+    0x69, 0x6E, 0x67, 0x60, 0x75, 0x72, 0x7B, 0x7C, 0x51, 0x56, 0x5F, 0x58, 0x4D, 0x4A, 0x43, 0x44,
+    0x19, 0x1E, 0x17, 0x10, 0x05, 0x02, 0x0B, 0x0C, 0x21, 0x26, 0x2F, 0x28, 0x3D, 0x3A, 0x33, 0x34,
+    0x4E, 0x49, 0x40, 0x47, 0x52, 0x55, 0x5C, 0x5B, 0x76, 0x71, 0x78, 0x7F, 0x6A, 0x6D, 0x64, 0x63,
+    0x3E, 0x39, 0x30, 0x37, 0x22, 0x25, 0x2C, 0x2B, 0x06, 0x01, 0x08, 0x0F, 0x1A, 0x1D, 0x14, 0x13,
+    0xAE, 0xA9, 0xA0, 0xA7, 0xB2, 0xB5, 0xBC, 0xBB, 0x96, 0x91, 0x98, 0x9F, 0x8A, 0x8D, 0x84, 0x83,
+    0xDE, 0xD9, 0xD0, 0xD7, 0xC2, 0xC5, 0xCC, 0xCB, 0xE6, 0xE1, 0xE8, 0xEF, 0xFA, 0xFD, 0xF4, 0xF3
+]
+    
+def crc8(data, start, length):
+    crc8 = 0
+    for i in range(length):
+        crc8 = crc8_table[crc8^(0xFF & data[start+i])]
+    return crc8
+
+def set_ir_sensitivity(s):
+    DEFAULT_IR_LEVEL = s
+
+def parseIRCalibration(data):
+    if len(data) < 11:
+        return None
+    s = (0x55 + sum(data[i] & 0xFF for i in range(10))) & 0xFF
+    if s != (data[10] & 0xFF):
+        return None
+    def getCoordinate(bits07_offset,bits89_offset,bits89_shift):
+        return (data[bits07_offset] & 0xFF) | (((data[bits89_offset] >> bits89_shift) & 0x3) << 8)    
+    
+    irc = [ (getCoordinate(*icl[0]), getCoordinate(*icl[1])) for icl in IR_CALIBRATION_LOCATIONS ]
+    
+    def find(x,y):
+        def cmp(a,b,d): 
+            if not d:
+                return a<b
+            else:
+                return b<a
+        for i in range(4):
+            if cmp(irc[i][0],512,x) and cmp(irc[i][1],384,y):
+                return irc[i]
+        raise RuntimeError()
+    try:
+        # sort counterclockwise from lower left
+        return [ find(0,0), find(1,0), find(1,1), find(0,1) ]
+    except RuntimeError:
+        return None
+ 
+def parseAccelCalibration(data):
+    if len(data) < 10:
+        return None
+    s = (0x55 + sum(data[i] & 0xFF for i in range(9))) & 0xFF
+    if s != (data[9] & 0xFF):
+        return None
+    def getCoordinate(bits29_offset,bits01_offset,bits01_shift):
+        return ((data[bits29_offset] & 0xFF) << 2) | ((data[bits01_offset] >> bits01_shift) & 0x3)    
+        
+    accel0g = tuple( getCoordinate(*cl) for cl in ACCEL_0G_CALIBRATION_LOCATIONS )
+    accel1g = tuple( getCoordinate(*cl) for cl in ACCEL_1G_CALIBRATION_LOCATIONS )
+    
+    return accel0g, accel1g
+
+def getWord(data, offset):
+    return (data[offset] & 0xFF) << 8 | (data[offset+1] & 0xFF)
+    
+def macStrip(mac):
+    return re.sub(r'[^A-F0-9]','',mac.upper())
+    
+def macClean(mac):
+    mac = macStrip(mac)
+    if len(mac) != 12:
+        return None
+    return ":".join((mac[i:i+2] for i in range(0,12,2)))
+    
+class IRRegisters:
+    LED_FLASHLIGHT = 0b01
+    LED_STROBE = 0b10000000
+    LED_12_OFF = 0b010000 ## TODO: check
+    LED_34_OFF = 0b100000 ## TODO: check
+    fields = ('resolution', 'exposure', 'maxExposure', 'leds', 'digitalGain',
+                        'externalLightFilter', 'brightnessThreshold', 'leds12Intensity', 'leds34Intensity',
+                        'flip', 'denoise', 'smoothingThreshold', 'interpolationThreshold', 'updateTime',
+                        'pointingThreshold')
+    
+    def __init__(self, **kwargs):
+        for arg in IRRegisters.fields:
+            if arg in kwargs:
+                setattr(self,arg,kwargs[arg])
+            else:
+                setattr(self,arg,None)
+        if "custom" in kwargs:
+            self.custom = kwargs["custom"]
+        else:
+            self.custom = []
+                
+    def __repr__(self):
+        return ", ".join(f+"="+repr(getattr(self,f)) for f in IRRegisters.fields)
+        
+    def defaults(self, mode):
+        if mode == IR_CLUSTERING:
+            self.resolution=320
+            self.exposure=200
+            self.maxExposure=0
+            self.leds=16
+            self.digitalGain=1
+            self.externalLightFilter=1
+            self.brightnessThreshold=200
+            self.leds12Intensity=13
+            self.leds34Intensity=13
+            self.flip=2
+            self.denoise=1
+            self.smoothingThreshold=35
+            self.interpolationThreshold=68
+            self.updateTime=50
+            self.pointingThreshold=0
+        elif mode == IR_POINTING:
+            self.resolution=320
+            self.exposure=200
+            self.maxExposure=0
+            self.leds=0
+            self.digitalGain=16
+            self.externalLightFilter=0
+            self.brightnessThreshold=200
+            self.leds12Intensity=13
+            self.leds34Intensity=13
+            self.flip=2
+            self.denoise=0
+            self.smoothingThreshold=35
+            self.interpolationThreshold=68
+            self.updateTime=50
+            self.pointingThreshold=1
+        elif mode == IR_IMAGE:
+            self.resolution=320
+            self.exposure=200
+            self.maxExposure=0
+            self.leds=0 # IRRegisters.LED_FLASHLIGHT
+            self.digitalGain=16
+            self.externalLightFilter=0
+            self.brightnessThreshold=200
+            self.leds12Intensity=13
+            self.leds34Intensity=13
+            self.flip=0
+            self.denoise=0
+            self.smoothingThreshold=35
+            self.interpolationThreshold=68
+            #self.updateTime=50
+            self.pointingThreshold=1
+            
+    def clearCustom(self):
+        self.custom = []
+        
+    def addCustom(self, page, register, value):
+        self.custom.append( (page,register,value) )
+    
+    def read(self, j):
+        page0 = j.get_mcu_registers(0x00)
+        page1 = j.get_mcu_registers(0x01)
+        r = page0[0x2e]
+        if r == 0b00000000:
+            self.resolution = 320
+        elif r == 0b01010000:
+            self.resolution = 160
+        elif r == 0b01100100:
+            self.resolution = 80
+        elif r == 0b01101001:
+            self.resolution = 40
+        else:
+            self.resolution = -(r & 0xFF)
+        e = (page1[0x30] & 0xFF) | ((page1[0x31] & 0xFF)<<8)
+        self.exposure = (e * 1000 + 31200//2) // 31200
+        self.maxExposure = page1[0x32]
+        self.leds = page0[0x10]
+        self.digitalGain = ((page1[0x2e] & 0xFF) | ((page1[0x2f] & 0xFF)<<8)) >> 4
+        self.externalLightFilter = 1 if page0[0x0e] else 3
+        self.brightnessThreshold = page1[0x43]
+        self.leds12Intensity = page0[0x11]
+        self.leds34Intensity = page0[0x12]
+        self.flip = page0[0x2d]
+        self.denoise = page1[0x67]
+        self.smoothingThreshold = page1[0x68]
+        self.interpolationThreshold = page1[0x69]
+        self.updateTime = page0[0x04]
+        self.pointingThreshold = page1[0x21]
+    
+    def write(self, j):
+        data = []
+        if self.resolution is not None:
+            if self.resolution == 320:
+                r = 0b00000000
+            elif self.resolution == 160:
+                r = 0b01010000
+            elif self.resolution == 80:
+                r = 0b01100100
+            elif self.resolution == 40:
+                r = 0b01101001
+            else:
+                r = -self.resolution
+            data.append((0x00,0x2e,r))
+        if self.exposure is not None:
+            e = (31200 * self.exposure + 500) // 1000
+            data.append((0x01,0x30,e & 0xFF))
+            data.append((0x01,0x31,(e>>8) & 0xFF))
+        if self.maxExposure is not None:
+            data.append((0x01,0x32,1 if self.maxExposure else 0))
+        if self.leds is not None:
+            data.append((0x00,0x10,self.leds))
+        if self.digitalGain is not None:
+            data.append((0x01,0x2e,(self.digitalGain & 0xF)<<4))
+            data.append((0x01,0x2f,(self.digitalGain & 0xF0)>>4))
+        if self.externalLightFilter is not None:
+            data.append((0x00,0x0e,3 if self.externalLightFilter else 0))
+        if self.brightnessThreshold is not None:
+            data.append((0x01,0x43,self.brightnessThreshold))
+        if self.leds12Intensity is not None:
+            data.append((0x00,0x11,self.leds12Intensity))
+        if self.leds34Intensity is not None:
+            data.append((0x00,0x12,self.leds34Intensity))
+        if self.flip is not None:
+            data.append((0x00,0x2d,self.flip))
+        if self.denoise is not None:
+            data.append((0x01,0x67,1 if self.denoise else 0))
+        if self.smoothingThreshold is not None:
+            data.append((0x01,0x68,self.smoothingThreshold))
+        if self.interpolationThreshold is not None:
+            data.append((0x01,0x69,self.interpolationThreshold))
+        if self.updateTime is not None:
+            data.append((0x00,0x04,self.updateTime))
+        elif self.resolution is not None:
+            data.append((0x00,0x04,0x02d if self.resolution == 40 else 0x32))
+        if self.pointingThreshold is not None:
+            data.append((0x01,0x21,self.pointingThreshold))
+        for triple in self.custom:
+            data.append(triple)
+        while len(data):
+            if len(data)<9:
+                j.set_mcu_registers(data+[(0x00,0x07,0x01),])
+                data = []
+            else:
+                j.set_mcu_registers(data[0:9])
+                if len(data) == 9:
+                    j.set_mcu_registers([(0x00,0x07,0x01),])
+                data = data[9:]
+
+class JoyCon:
+    def __init__(self, timeout=5, connectTimeout=15, connectCallback=None):
+        self.connectCallback = connectCallback if connectCallback is not None else lambda msg: None
+        self.timeout = timeout
+        self.timeout_ms = int(timeout * 1000)
+        self.connectTimeout = connectTimeout
+        self.id = None
+        self.state = {}
+        self.accel0gCalibration = (512,512,512)
+        self.accel1gCalibration = (616,616,616)
+        self.irCalibration = [(127,93),(896,93),(896,674),(127,674)]
+        self.zeroBalanceBoardOnButton = True
+        self.rpt_mode = RPT_IR|RPT_BTN|RPT_ACC # |RPT_EXT
+        self.mesg_callback = lambda data,t: None
+        self.name = None
+        self.prevButtons = 0
+        self._rumble = 0
+        
+        if USE_HID:
+            self.initHID(connectTimeout=connectTimeout+5)
+        else:
+            self.connectCallback(CONNECT_PRESS_12)
+            self.initSocket()
+        
+        self.opened = True
+        self.rumble = False
+        #self.led = 0x60
+        self.packet_counter = 0
+        
+        #self.calibrate()
+        if self.id is None:
+            self.id = "joycon"
+        #self.led = 0
+        
+        
+        
+    def send_subcommand(self, subcommand_id, data=b""):
+        # Output Report 0x01: [Report ID (1 byte), Packet Counter (1 byte), Rumble (8 bytes), Subcommand (1 byte), Data (...)]
+        rumble_default = b"\x00\x01\x40\x40\x00\x01\x40\x40"
+        packet = bytes([0x01, self.packet_counter & 0x0F]) + rumble_default + bytes([subcommand_id]) + data
+        self.packet_counter += 1
+        self.send(packet)
+
+    def initSocket(self):
+        mac,name = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
+        if not mac:
+            raise RuntimeError()
+        self.s_control = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
+        self.s_interrupt = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)        
+        self.s_control.settimeout(self.connectTimeout)
+        self.s_control.connect((mac, PSM_CONTROL))
+        self.s_interrupt.settimeout(self.connectTimeout)
+        self.s_interrupt.connect((mac, PSM_INTERRUPT))
+        self.s_control.settimeout(self.timeout)
+        self.s_interrupt.settimeout(self.timeout)
+        self.id = mac
+        self.path = mac
+        openedWiimotes.add(mac)
+        
+    def close(self):
+        if self.listening:
+            self.listening = False
+            try:
+                self.send(bytes((0x13, 0x00)))
+                time.sleep(0.05)
+                self.send(bytes((0x1A, 0x00)))
+                time.sleep(0.05)
+            except:
+                pass
+            
+        self.opened = False
+        openedWiimotes.discard(self.path)
+            
+        if USE_HID:
+            try:
+                self.handle.close()
+            except:
+                pass
+        else:
+            try:
+                self.s_control.close()
+            except:
+                pass
+            try:
+                self.s_interrupt.close()
+            except:
+                pass
+                
+    def getSerial(self,dev):
+        if 'serial_number' in dev and dev['serial_number']:
+            return dev['serial_number']
+        handle = hid.device()
+        try:
+            handle.open_path(dev['path'])
+            return handle.get_serial_number_string()
+        except:
+            return "wiimote"
+        finally:
+            handle.close()
+            
+    def openJoyCon(self,mac=None):
+        for dev in hid.enumerate():
+            if dev['vendor_id'] == JOYCON_VID and dev['product_id'] in JOYCON_PIDS:
+                if mac is not None:
+                    if macStrip(mac) != macStrip(getSerial(dev)):
+                        continue
+                path = dev['path']
+                if path in openedWiimotes:
+                    continue
+                handle = hid.device()
+                try:
+                    handle.open_path(path)
+                except:
+                    continue
+                try:
+                    handle.set_nonblocking(False)
+                    # status request 
+                    self.id = macClean(handle.get_serial_number_string())
+                    print("id",self.id)
+                except:
+                    handle.close()
+                    continue
+                    
+                print(f"Found JoyCon at: {path}")
+                self.path = path
+                openedWiimotes.add(path)
+                return handle
+        return None       
+
+    def initHID(self,connectTimeout=15):
+        if os.name == "nt":
+            self.connectCallback(CONNECT_QUICK)
+            self.handle = self.openJoyCon()
+        else:
+            self.handle = None
+        if not self.handle:
+            if os.name == "nt":
+                pair_joycon(timeout=connectTimeout,connectCallback=self.connectCallback)
+                mac = None
+            else:
+                self.connectCallback(CONNECT_PRESS_12)
+                mac,_ = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes,connectAndPair=True)
+                if not mac:
+                    print("Cannot find Wiimote")
+                    raise RuntimeError()
+                pass
+            t = time.monotonic()
+            while not self.handle and time.monotonic() < t + self.timeout:
+                self.handle = self.openJoyCon(mac=mac)
+                if not self.handle:
+                    time.sleep(0.1)
+            if not self.handle:
+                print("Failed to connect")
+                raise RuntimeError()
+        
+    def recv(self,size):
+        if not self.opened:
+            return None
+        try:
+            if USE_HID:
+                data = self.handle.read(size,timeout_ms=self.timeout_ms)
+                if not data:
+                    raise OSError()
+                return data
+            else:
+                data = self.s_interrupt.recv(size+1)
+                if not data or data[0] & 0xFF != 0xA1:
+                    raise OSError()
+                return data[1:]
+        except OSError:
+            self.close()
+            return None
+            
+    def send(self,out):
+        if not self.opened:
+            return None
+        try:
+            if USE_HID:
+                self.handle.write(bytes(out))
+            else:
+                self.s_interrupt.send(bytes((0xA2,)) + bytes(out))
+        except OSError:
+            raise Exception()
+            self.close()
+
+    def send_control(self,out,crcLocation=None,crcStart=None,crcLength=None,confirm=None,command=0x01,confirmRetries=16):
+        if not self.opened:
+            raise IOError()
+            
+        r = confirmRetries
+        while r>0:
+            data = bytearray((command,self.packet_counter))+NEUTRAL_RUMBLE+bytes(out)
+            if len(data)>49:
+                data = data[:49]
+            elif len(data)<49:
+                data += bytes((0,))*(49-len(data))
+            if crcLocation is not None:
+                data[crcLocation] = crc8(data, crcStart, crcLength)
+                
+            if USE_HID:
+                self.handle.write(data)
+            else:
+                self.s_control.send(data)
+            self.packet_counter = (self.packet_counter+1) & 0xF
+
+            if confirm is None:
+                return None
+                
+            r2 = 6
+            while r2 > 0:
+                report = self.recv(512)
+                haveRightReportType = None
+                for pos,value in confirm:
+                    if pos == 0 and len(report) >= 1 and report[0] == value:
+                        haveRightReportType = True
+                    elif len(report)<=pos or report[pos] != value:
+                        break
+                else:
+                    return report
+                    
+                if haveRightReportType:
+                    break
+                else:
+                    r2 -= 1
+            r -= 1
+        raise IOError("wrong report, not confirmed")
+            
+    def _set_report_type(self, reportType):
+        self._report_type = reportType
+        self.send_control(b'\x03'+bytes((reportType,)), confirm=((0xD,0x80),(0xE,0x3)))
+
+    def _request_mcu_registers(base_address, length):
+        subcommand_id = b'\x21'
+        sub_mode = b'\x01'  # Read register mode
+        
+        addr_high = (base_address >> 8) & 0xFF
+        addr_low = base_address & 0xFF
+        len_byte = length & 0xFF
+        
+        packet = (
+            subcommand_id + 
+            sub_mode + 
+            bytes([addr_high, addr_low, len_byte])
+        )
+        
+        # Send via transport wrapper (applies 49-byte padding only if on Windows/hidapi)
+        send_control(packet)
+        
+    def _parse_mcu_register_response(report_bytes):
+        if len(report_bytes) < 17 or report_bytes[0] != 0x21:
+            return None
+            
+        echoed_subcommand = report_bytes[14]
+        echoed_submode = report_bytes[15]
+        
+        # Check if this report is an MCU Register Read Response (0x21, 0x01)
+        if echoed_subcommand == 0x21 and echoed_submode == 0x01:
+            length = report_bytes[16]
+            register_values = report_bytes[17 : 17 + length]
+            return register_values
+            
+        return None        
+            
+    def get_mcu_registers(page):
+        addr = (page & 0xFF) << 8
+        data = bytearray()
+        CHUNK_SIZE = 32
+        for chunk_idx in range(8):
+            offset = chunk_idx * CHUNK_SIZE
+            target_addr = page_base_addr + offset
+            
+            # 1. Send 32-byte read request for target address
+            packet_counter = _request_mcu_registers(
+                base_address=target_addr,
+                length=CHUNK_SIZE
+            )
+
+            # 2. Poll/Wait for the corresponding Input Report 0x21 ack
+            start_time = time.monotonic()
+            chunk_data = None
+
+            while (time.monotonic() - start_time) < timeout_s:
+                report = transport.recv_interrupt(timeout_ms=100)
+                if not report:
+                    continue
+
+                # Verify it's an MCU register read ack (Report 0x21, Subcommand 0x21, Submode 0x01)
+                parsed_bytes = _parse_mcu_register_response(report)
+                if parsed_bytes is not None:
+                    chunk_data = parsed_bytes
+                    break
+
+            if chunk_data is None or len(chunk_data) < CHUNK_SIZE:
+                raise TimeoutError(
+                    f"Failed to read MCU register page {page_num} at offset {hex(offset)}. "
+                    f"Ensure MCU is powered on (Subcommand 0x22) and in active mode."
+                )
+
+            data.extend(chunk_data)            
+        return data
+        
+    def _request_ir_report(self,fragmentAcknowledge=0,ignore=False):
+        self.send_control(b'\x03\x00\x00\x00'+bytes((fragmentAcknowledge,))+(b'\x00'*33)+b'\xFF', command=0x11, crcLocation=47, crcStart=11, crcLength=36, confirm=((0,0x31),) if ignore else None)
+
+    def set_ir(self,ir_mode,ir):
+        self.ir_mode = ir_mode
+        # It needs delta time to update the setting
+        time.sleep(0.02)
+        if ir_mode is None:
+            self.send_control(b'\x21\x23\x01\x02', crcLocation=48, crcStart=12, crcLength=36)
+            self.send_control(b'\x22\x00')
+            self._set_report_type(0x30)
+        else:
+            self._set_report_type(0x31)
+            self.send_control(b'\x22\x01', confirm=((0xD,0x80),(0xE,0x22)))
+            self.send_control(b'\x01', confirm=((0,0x31),(49,0x01),(56,0x01)), command=0x11)
+            self.send_control(b'\x21\x01\x00\x05', crcLocation=48, crcStart=12, crcLength=36, confirm=((0,0x21),  )) # (15,0x01),(22, 0x01)
+            self.send_control(b'\x01', confirm=((0,0x31),(49,0x01),(56,0x05)), command=0x11)
+            args = struct.pack('<BBBBHH', 0x23, 0x01, self.ir_mode, 1, 0x0500, 0x1800)
+            self.send_control(b'\x21'+args, crcLocation=48, crcStart=12, crcLength=36)
+
+            ir.write(self)
+            
+            for retries in range(500):
+                self._request_ir_report()
+                report = self.recv(512)
+                if self._have_ir_data(report):
+                    break
+            else:
+                raise IOError("No IR data received")
+            
+            ir.write(self)
+        
+    def set_mcu_registers(self,register_tuples):
+        subcommand_id = b'\x21'
+        sub_mode = b'\x04'  # Write register mode
+        
+        num_writes = bytes([len(register_tuples) & 0xFF])
+        
+        # Build payload of (Addr High, Addr Low, Value)
+        payload = bytearray()
+        for addr_high, addr_low, val in register_tuples:
+            payload.extend([addr_high & 0xFF, addr_low & 0xFF, val & 0xFF])
+            
+        # Assemble complete packet
+        self.send_control (
+            subcommand_id + 
+            sub_mode + 
+            num_writes + 
+            bytes(payload)
+        )
+        
+    @property
+    def rumble(self):
+        return self._rumble != 0
+        
+    @rumble.setter
+    def rumble(self, x):
+        self._rumble = 1 if x else 0
+        self.send((0x10,self._rumble))
+         
+    @property
+    def led(self):
+        return self._leds
+    
+    @led.setter
+    def led(self, l):
+        self.send((0x11,l | self._rumble))
+        self._leds = l
+        
+    def read_sync(self,location,address,size):
+        output = b''
+        if size == 0:
+            return output
+        read_cmd = bytes((0x17, location, (address&0xFF0000)>>16, (address&0xFF00)>>8, address&0xFF, (size&0xFF00)>>8, size&0xFF))
+        self.send(read_cmd)
+        time.sleep(0.2)
+        t = time.monotonic()
+        while time.monotonic() <= t + self.timeout and size > 0:
+            data = self.recv(64)
+            if data and data[0] == 0x21 and len(data)>6:
+                if data[3] & 0xF == 0 and getWord(data, 4) == address & 0xFFFF:
+                    n = min(size, len(data)-6)
+                    output += bytes(data[6:6+n])
+                    address += n
+                    size -= n
+                else:
+                    return None
+            elif data and data[0] == 0x22 and data[3] == 0x17 and data[4] != 0:
+                return None
+            else:
+                time.sleep(0.01)
+        if size == 0:
+            return output
+        else:
+            return None
+    
+    def write_reg(self,address,data):
+        if len(data) > 16:
+            return
+        paddedData = list(data) + (16-len(data)) * [0,]
+        write_cmd = bytes([0x16, RW_REG, (address&0xFF0000)>>16, (address&0xFF00)>>8, address&0xFF, len(data)] + paddedData)
+        self.send(write_cmd)
+            
+    def enable(self,mode=0,irLevel=DEFAULT_IR_LEVEL): # mode is ignored
+        self.listening = True
+        self.listenThread = Thread(target = self.listen, args=(irLevel,))
+        self.listenThread.start()
+        
+    def _have_ir_data(self, report):
+        return self.ir_mode is not None and report[0] == 0x31 and report[49] == 0x03 and report[51] == self.ir_mode
+        
+    def _get_ir_image(self):
+        return self._ir_last_image
+
+    def get_ir_cluster(self, data):
+        brightness,pixels,cm_y_64,cm_x_64,y_start,y_end,x_start,x_end = struct.unpack("<HHHHHHHH", bytes(data))
+        return namedtuple("ir_cluster", ["brightness", "pixels", "cm", "start", "end"])(
+            brightness, pixels, (cm_x_64/64.,cm_y_64/64.), (x_start,y_start), (x_end,y_end));
+
+    def _get_ir_clusters(self, report):
+        if self.ir_mode == IR_POINTING or self.ir_mode == IR_CLUSTERING:
+            clusters = []
+            if self._have_ir_data(report):
+                i = 61
+                while i + 16 <= 59+300:
+                    if self.ir_mode == IR_POINTING and (i == 61 + 48 or i == 61 + 97 or i == 61 + 146 or i == 61 + 195 or i == 61 + 244):
+                        i += 1
+                    if report[i] != 0 or report[i+1] !=0:
+                        clusters.append(self.get_ir_cluster(report[i:i+16]))
+                    i += 16
+            return clusters
+        else:
+            return None
+
+    def listen(self,irLevel):
+        if self.ir_mode is not None:
+            reportMode = 0x31
+            reportSize = 362
+        else:
+            reportMode = 0x30
+            reportSize = 49
+        
+        self._set_report_type(reportMode)
+
+        if self.rpt_mode & RPT_ACC:
+            self.send_control(b'\x40\x01') # turn on accel sensors
+
+        while self.listening:
+            data = self.recv(reportSize)
+            if not self.listening:
+                break
+            if not data:
+                time.sleep(0.01)
+                continue
+            out = {}
+            t = time.monotonic()
+            if data[0] == 0x30 or data[0] == 0x31:
+                buttons = 0
+                btn_right_byte = data[3]
+                btn_shared_byte = data[4]
+                btn_left_byte = data[5]                
+                if btn_right_byte & 0x08:
+                    buttons |= BTN_A
+                if btn_right_byte & 0x04:
+                    buttons |= BTN_B
+                if btn_shared_byte & 0x02:
+                    buttons |= BTN_PLUS
+                if btn_shared_byte & 0x10:
+                    buttons |= BTN_HOME
+    
+#        'X': bool(btn_right_byte & 0x02),
+#        'Y': bool(btn_right_byte & 0x01),
+#        'ZR': bool(btn_right_byte & 0x80),
+#        'R': bool(btn_right_byte & 0x40),
+                out["buttons"] = buttons
+
+                self.prevButtons = out["buttons"]
+                if self._have_ir_data(data):
+                    ir_full = self._get_ir_clusters(data)
+                    ir_short = [None,None,None,None]
+                    for i in range(min(4,len(ir_full))):
+                        d = ir_full[i]
+                        ir_short[i] = ((d.cm[0],d.cm[1]),math.sqrt(d.pixels))
+                    out["ir"] = ir_short
+                    
+                if self.rpt_mode & RPT_ACC:
+                    offset = 13 + (2*12)+6
+                    x,y,z = struct.unpack_from('<hhh', bytes(data),offset)
+                    out["acc_raw"] = (x,y,z)
+                    
+
+                if self.ir_mode:
+                    self._request_ir_report()
+                
+                self.state = out
+                self.mesg_callback(out,t)        
+             
+if __name__=='__main__':
+    w = JoyCon(connectCallback=print)
+    r = IRRegisters()
+    r.defaults(IR_POINTING)
+    r.leds = IRRegisters.LED_12_OFF | IRRegisters.LED_34_OFF #IRRegisters.LED_12_OFF | IRRegisters.LED_34_OFF
+    r.leds12Intensity = 0x0
+    r.leds34Intensity = 0x0
+    r.resolution = 320
+    r.digitalGain = 18
+    r.externalLightFilter=0
+    r.pointingThreshold = 0
+    r.addCustom(0x00,0x24,0x0)
+    print(w.irCalibration)
+    print(w.accel0gCalibration)
+    print(w.accel1gCalibration)
+    prevButtons = 0
+    def callback(data,t):
+        global prevButtons
+        print(data)
+        if (data['buttons'] & ~prevButtons) & BTN_A:
+            w.rumble = True
+        if (prevButtons & ~data['buttons']) & BTN_A:
+            w.rumble = False
+        prevButtons = data['buttons']            
+        
+    w.mesg_callback = print
+    w.rpt_mode=RPT_IR|RPT_EXT|RPT_ACC|RPT_IR
+    w.set_ir(IR_POINTING, r)
+    w.enable()
+    print("running")
+    while w.opened:
+        time.sleep(1)
+        pass
