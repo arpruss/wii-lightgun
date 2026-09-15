@@ -95,23 +95,14 @@ def parseIRCalibration(data):
         return [ find(0,0), find(1,0), find(1,1), find(0,1) ]
     except RuntimeError:
         return None
- 
-def parseAccelCalibration(data):
-    if len(data) < 10:
-        return None
-    s = (0x55 + sum(data[i] & 0xFF for i in range(9))) & 0xFF
-    if s != (data[9] & 0xFF):
-        return None
-    def getCoordinate(bits29_offset,bits01_offset,bits01_shift):
-        return ((data[bits29_offset] & 0xFF) << 2) | ((data[bits01_offset] >> bits01_shift) & 0x3)    
         
-    accel0g = tuple( getCoordinate(*cl) for cl in ACCEL_0G_CALIBRATION_LOCATIONS )
-    accel1g = tuple( getCoordinate(*cl) for cl in ACCEL_1G_CALIBRATION_LOCATIONS )
+def getSWordLE(data, offset):
+    x = (data[offset+1] & 0xFF) << 8 | (data[offset] & 0xFF)
     
-    return accel0g, accel1g
-
-def getWord(data, offset):
-    return (data[offset] & 0xFF) << 8 | (data[offset+1] & 0xFF)
+    if x & 0x8000:
+        return -((-x)&0xFFFF)
+    else:
+        return x
     
 def getWordLE(data, offset):
     return (data[offset+1] & 0xFF) << 8 | (data[offset] & 0xFF)
@@ -323,13 +314,14 @@ class JoyCon:
         else:
             self.connectCallback(CONNECT_PRESS_12)
             self.initSocket()
-        
+
         self.opened = True
         self.rumble = False
         #self.led = 0x60
         self.packet_counter = 0
+        print("calibrate")
+        self.calibrate()
         
-        #self.calibrate()
         if self.id is None:
             self.id = "joycon"
         #self.led = 0
@@ -530,7 +522,6 @@ class JoyCon:
         cmd = bytes((0x03,0x01,page,0x00,0x7f))
         report = self.send_control(b'\x03'+cmd,crcLocation=47,crcStart=11,crcLength=36,
                     confirm=((49,0x1b),(51,page),(52,0x00)),command=0x11)
-        print("register length ",len(report))
         if not report:
             raise IOError("Cannot read MCU registers")
         else:
@@ -609,43 +600,10 @@ class JoyCon:
     
     @led.setter
     def led(self, l):
-        self.send((0x11,l | self._rumble))
+        #self.send((0x11,l | self._rumble))
+        # todo
         self._leds = l
         
-    def read_sync(self,location,address,size):
-        output = b''
-        if size == 0:
-            return output
-        read_cmd = bytes((0x17, location, (address&0xFF0000)>>16, (address&0xFF00)>>8, address&0xFF, (size&0xFF00)>>8, size&0xFF))
-        self.send(read_cmd)
-        time.sleep(0.2)
-        t = time.monotonic()
-        while time.monotonic() <= t + self.timeout and size > 0:
-            data = self.recv(64)
-            if data and data[0] == 0x21 and len(data)>6:
-                if data[3] & 0xF == 0 and getWord(data, 4) == address & 0xFFFF:
-                    n = min(size, len(data)-6)
-                    output += bytes(data[6:6+n])
-                    address += n
-                    size -= n
-                else:
-                    return None
-            elif data and data[0] == 0x22 and data[3] == 0x17 and data[4] != 0:
-                return None
-            else:
-                time.sleep(0.01)
-        if size == 0:
-            return output
-        else:
-            return None
-    
-    def write_reg(self,address,data):
-        if len(data) > 16:
-            return
-        paddedData = list(data) + (16-len(data)) * [0,]
-        write_cmd = bytes([0x16, RW_REG, (address&0xFF0000)>>16, (address&0xFF00)>>8, address&0xFF, len(data)] + paddedData)
-        self.send(write_cmd)
-            
     def enable(self,mode=0,irLevel=DEFAULT_IR_LEVEL): # mode is ignored
         self.listening = True
         self.listenThread = Thread(target = self.listen, args=(irLevel,))
@@ -722,10 +680,11 @@ class JoyCon:
                         
                     if self.rpt_mode & RPT_ACC:
                         x,y,z = struct.unpack_from('<hhh', bytes(data),13+(2*12))
-                        out["acc_calib"] = (x/4096.,y/4096.,z/4096.) # TODO: calibrate
+                        #out["acc_raw"] = (x,y,z)
+                        out["acc_calib"] = ((x-self.accel0g[0])*self.accelScale[0], (y-self.accel0g[1])*self.accelScale[0], (z-self.accel0g[2])*self.accelScale[0] )
                         x,y,z = struct.unpack_from('<hhh', bytes(data),19+(2*12))
-                        out["gyro_raw"] = (x,y,z) # TODO: calibrate
-
+                        #out["gyro_raw"] = (x,y,z) 
+                        out["gyro_calib"] = ((x-self.gyroOffset[0])*self.gyroScale[0], (y-self.gyroOffset[1])*self.gyroScale[0], (z-self.gyroOffset[2])*self.gyroScale[0] )
                     if self.ir_mode:
                         self._request_ir_report()
                     
@@ -734,6 +693,29 @@ class JoyCon:
         except IOError as e:
             print(e)
             self.close()
+            
+    def read_flash(self,address,length):
+        subCommand = b'\x10' + bytes( ( address & 0xFF, ( address >> 8) & 0xFF, ( address >> 16) & 0xFF, ( address >> 24) & 0xFF, length ) )
+        confirm = [(0,0x21),(13,0x90)] 
+        for i in range(len(subCommand)):
+            confirm.append((14+i,subCommand[i]))
+        report = self.send_control(subCommand, confirm=confirm,)
+        return report[13+7:13+7+length]
+
+    def calibrate(self):
+        if self.read_flash(0x8026,2) == b'\xB2\xA1':
+            cal = self.read_flash(0x8028, 24) # user data
+        else:
+            cal = self.read_flash(0x6020, 24) # factory data
+        imuCal = []
+        for i in range(12):
+            imuCal.append(getSWordLE(cal,2*i))
+        self.accel0g = (0,0,0) # imuCal[0:3]
+        self.accelScale = tuple((x/(0x4000*4096)) for x in imuCal[3:6])
+        self.gyroOffset = imuCal[6:9]
+        self.gyroScale = tuple((x/(0x343b*4096)) for x in imuCal[9:12])
+
+            
              
 if __name__=='__main__':
     w = JoyCon(connectCallback=print)
