@@ -179,13 +179,9 @@ def format_address(address):
 def is_wiimote(device):
     """Return True if the device appears to be a Wii Remote."""
 
-    name = device.szName or ""
-
-    return (
-        "Nintendo" in name
-        or "RVL-CNT" in name
-    )
-
+    name = (device.szName or "").upper()
+    
+    return "RVL-CNT" in name or "RVT-CNT" in name or "WII CONTROLLER" in name
 
 def copy_device_info(source):
     """
@@ -574,10 +570,6 @@ def find_wiimote(
 
     search_params.hRadio = hRadio
 
-    print()
-    print(
-        "Press 1+2 on the Wii Remote now!"
-    )
     print(
         f"Scanning for Wii Remotes "
         f"(timeout: {timeout}s)..."

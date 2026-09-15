@@ -10,7 +10,6 @@ from threading import Thread
 if os.name == 'nt':
     USE_HID = True
     from windows.wiipair import pair_wiimote
-    from windows.get_address import get_mac_from_hid_path
 else:
     USE_HID = ALWAYS_HIDAPI 
     from linux.wiimote_scan import scan_wiimote_dbus_poll
