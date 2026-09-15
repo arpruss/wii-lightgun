@@ -176,13 +176,6 @@ def format_address(address):
     )
 
 
-def is_wiimote(device):
-    """Return True if the device appears to be a Wii Remote."""
-
-    name = (device.szName or "").upper()
-    
-    return "RVL-CNT" in name or "RVT-CNT" in name or "WII CONTROLLER" in name
-
 def copy_device_info(source):
     """
     Make an independent copy of BLUETOOTH_DEVICE_INFO.
@@ -420,7 +413,7 @@ def remove_device_with_timeout(
 # Clean stale Wii Remote records
 # ============================================================
 
-def clean_stale_wiimotes(hRadio):
+def clean_stale(hRadio,recognizer=lambda x:False):
     """
     Remove remembered but unauthenticated Wii Remote records.
 
@@ -443,11 +436,7 @@ def clean_stale_wiimotes(hRadio):
         inquiry=False,
     )
 
-    wiimotes = [
-        device
-        for device in devices
-        if is_wiimote(device)
-    ]
+    wiimotes = [device for device in devices if recognizer(device)]
 
     if not wiimotes:
 
@@ -541,9 +530,10 @@ def clean_stale_wiimotes(hRadio):
 # Find Wii Remote through inquiry
 # ============================================================
 
-def find_wiimote(
+def find_device(
     hRadio,
     timeout=15,
+    recognizer=lambda x:False
 ):
     """
     Perform a Bluetooth inquiry and find a Wii Remote.
@@ -606,12 +596,9 @@ def find_wiimote(
             try:
 
                 while True:
+                    if recognizer(device_info):
 
-                    if is_wiimote(device_info):
-
-                        target = copy_device_info(
-                            device_info
-                        )
+                        target = copy_device_info(device_info)
 
                         print()
                         print(
@@ -709,8 +696,8 @@ def activate_hid_service(
 # Main pairing function
 # ============================================================
 
-def pair_wiimote(
-    timeout=20,connectCallback=None
+def pair(
+    timeout=20,connectCallback=None, recognizer=lambda x:False, clean=True
 ):
     """
     Pair a Wii Remote.
@@ -743,10 +730,11 @@ def pair_wiimote(
     try:
         connectCallback(CONNECT_CLEANING)
 
-        clean_stale_wiimotes(hRadio)
+        if clean:
+            clean_stale(hRadio,recognizer=recognizer)
 
         connectCallback(CONNECT_PRESS_12)
-        device = find_wiimote(hRadio,timeout=timeout)
+        device = find_device(hRadio,timeout=timeout,recognizer=recognizer)
 
         if device is None:
             return False
@@ -757,11 +745,24 @@ def pair_wiimote(
         kernel32.CloseHandle(hRadio)
 
 
-if __name__ == "__main__":
 
-    success = pair_wiimote(
-        timeout=15
-    )
+def pair_wiimote(timeout=20,connectCallback=None):
+    def isWiimote(device):
+        name = (device.szName or "").upper()
+        return "RVL-CNT" in name or "RVT-CNT" in name or "WII CONTROLLER" in name
+    return pair(timeout=timeout,connectCallback=connectCallback,recognizer=isWiimote)
+
+def pair_joycon(timeout=20,connectCallback=None, left=True, right=True):
+    def isJoyCon(device):
+        name = (device.szName or "").upper()
+        return "JOY-CON" in name and ( (left and "(L)" in name) or (right and "(R)" in name) )
+    return pair(timeout=timeout,connectCallback=None,recognizer=isJoyCon)
+
+if __name__ == "__main__":
+    if len(sys.argv) >= 2 and sys.argv[1] == "joycon":
+        success = pair_joycon(timeout=15)
+    else:
+        success = pair_wiimote(timeout=15)
 
     print()
 
