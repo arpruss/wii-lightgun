@@ -381,12 +381,9 @@ def remove_device_with_timeout(
 
             return None
 
-        print(
-            f"\rRemoving stale record... "
-            f"{elapsed:5.1f}s",
+        print(f"\rRemoving stale record... {elapsed:5.1f}s",
             end="",
-            flush=True,
-        )
+            flush=True)
 
         time.sleep(0.25)
 
@@ -410,77 +407,29 @@ def remove_device_with_timeout(
 
 
 # ============================================================
-# Clean stale Wii Remote records
+# Clean stale records
 # ============================================================
 
 def clean_stale(hRadio,recognizer=lambda x:False):
     """
-    Remove remembered but unauthenticated Wii Remote records.
-
-    An authenticated remembered Wii Remote is left alone.
-
-    IMPORTANT:
-    No Bluetooth inquiry is performed here. Therefore the Wii
-    Remote does not need to be in 1+2 mode while the potentially
-    slow BluetoothRemoveDevice() operation runs.
+    Remove remembered but unconnected devices.
     """
 
-    print("Checking for remembered Wii Remote records...")
+    print("Checking for remembered unconnected device records...")
 
     devices = enumerate_devices(
         hRadio,
         remembered=True,
         unknown=False,
-        authenticated=True,
-        connected=True,
+        authenticated=False, 
+        connected=False, 
         inquiry=False,
     )
 
-    wiimotes = [device for device in devices if recognizer(device)]
-
-    if not wiimotes:
-
-        print(
-            "No remembered Wii Remote records found."
-        )
-
-        return True
-
-    print(
-        f"Found {len(wiimotes)} remembered "
-        f"Wii Remote record(s)."
-    )
-
-    purge_required = False
-    
-    toPurge = []
-
-    for device in wiimotes:
-
-        remembered = bool(device.fRemembered)
-        authenticated = bool(device.fAuthenticated)
-        connected = bool(device.fConnected)
-
-        print()
-        print(
-            f"  {device.szName!r}"
-        )
-        print(
-            f"  Address: "
-            f"{format_address(device.Address)}"
-        )
-        print(
-            f"  remembered={remembered} "
-            f"authenticated={authenticated} "
-            f"connected={connected}"
-        )
-        
-        if remembered and not connected:
-            print("Need to purge")
-            toPurge.append(device)
+    toPurge = [device for device in devices if recognizer(device) and not device.fConnected and device.fRemembered]
 
     if not toPurge:
-        print("All remembered Wii Remotes are connected. No purge necessary.")
+        print("All remembered devices are connected. No purge necessary.")
         return True
 
     # --------------------------------------------------------
@@ -488,20 +437,11 @@ def clean_stale(hRadio,recognizer=lambda x:False):
     # --------------------------------------------------------
 
     for device in toPurge:
-        print(
-            f"Removing stale record:"
-        )
-        print(
-            f"  {device.szName}"
-        )
-        print(
-            f"  {format_address(device.Address)}"
-        )
+        print("Removing stale record:")
+        print(f"  {device.szName}")
+        print(f"  {format_address(device.Address)}")
 
-        print(
-            "Windows may take about 30 seconds "
-            "to complete this operation."
-        )
+        print("Windows may take about 30 seconds to complete this operation.")
 
         result = remove_device_with_timeout(device.Address,timeout=45)
 
@@ -536,7 +476,7 @@ def find_device(
     recognizer=lambda x:False
 ):
     """
-    Perform a Bluetooth inquiry and find a Wii Remote.
+    Perform a Bluetooth inquiry and find a device.
 
     This function is only called after stale-record cleanup
     has finished.
@@ -560,10 +500,7 @@ def find_device(
 
     search_params.hRadio = hRadio
 
-    print(
-        f"Scanning for Wii Remotes "
-        f"(timeout: {timeout}s)..."
-    )
+    print(f"Scanning for devices (timeout: {timeout}s)...")
 
     start_time = time.monotonic()
 
@@ -601,15 +538,9 @@ def find_device(
                         target = copy_device_info(device_info)
 
                         print()
-                        print(
-                            f"Found Wii Remote "
-                            f"({target.szName})"
-                        )
+                        print(f"Found device ({target.szName})")
 
-                        print(
-                            f"Address: "
-                            f"{format_address(target.Address)}"
-                        )
+                        print(f"Address: {format_address(target.Address)}")
 
                         print(
                             f"remembered="
@@ -647,9 +578,7 @@ def activate_hid_service(
     """
 
     print()
-    print(
-        "Activating HID service..."
-    )
+    print("Activating HID service...")
 
     result = bth.BluetoothSetServiceState(
         hRadio,
@@ -658,36 +587,21 @@ def activate_hid_service(
         BLUETOOTH_SERVICE_ENABLE,
     )
 
-    print(
-        f"BluetoothSetServiceState returned "
-        f"{result}"
-    )
+    print(f"BluetoothSetServiceState returned {result}")
 
     if result == ERROR_SUCCESS:
-
         print()
-        print(
-            "Wiimote successfully paired and "
-            "HID service activated!"
-        )
+        print("Device successfully paired and HID service activated.")
 
         return True
 
     if result == ERROR_BUSY:
-
         print()
-        print(
-            "ERROR_BUSY (170): Windows reports "
-            "the Bluetooth device is busy."
-        )
+        print("ERROR_BUSY (170): Windows reports the Bluetooth device is busy.")
 
     else:
-
         print()
-        print(
-            f"BluetoothSetServiceState failed "
-            f"with error {result}."
-        )
+        print(f"BluetoothSetServiceState failed with error {result}.")
 
     return False
 
@@ -699,23 +613,6 @@ def activate_hid_service(
 def pair(
     timeout=20,connectCallback=None, recognizer=lambda x:False, clean=True
 ):
-    """
-    Pair a Wii Remote.
-
-    Algorithm:
-
-        1. Enumerate remembered devices WITHOUT inquiry.
-        2. If a Wii Remote is remembered and authenticated,
-           leave it alone.
-        3. If a Wii Remote is remembered but unauthenticated,
-           remove its stale record.
-        4. Wait for the Bluetooth stack to settle.
-        5. Ask user to press 1+2.
-        6. Perform Bluetooth inquiry.
-        7. Find the Wii Remote.
-        8. Enable its HID service.
-    """
-    
     if connectCallback is None:
         connectCallback = lambda x : None
 

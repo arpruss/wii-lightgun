@@ -37,8 +37,6 @@ else:
 
 openedDevices = set()
 
-WIIUSE = False
-
 DEFAULT_IR_LEVEL = 5
 
 crc8_table = [
@@ -290,7 +288,7 @@ class IRRegisters:
                 data = data[9:]
 
 class JoyCon:
-    def __init__(self, timeout=5, connectTimeout=15, connectCallback=None):
+    def __init__(self, timeout=5, connectTimeout=15, connectCallback=None, pair=True):
         self.connectCallback = connectCallback if connectCallback is not None else lambda msg: None
         self.timeout = timeout
         self.timeout_ms = int(timeout * 1000)
@@ -310,10 +308,9 @@ class JoyCon:
         self.ir_registers = None
         
         if USE_HID:
-            self.initHID(connectTimeout=connectTimeout+5)
+            self.initHID(connectTimeout=connectTimeout+5,pair=pair)
         else:
-            self.connectCallback(CONNECT_PRESS_12)
-            self.initSocket()
+            self.initSocket(pair=pair)
 
         self.opened = True
         self.rumble = False
@@ -326,7 +323,9 @@ class JoyCon:
             self.id = "joycon"
         #self.led = 0
         
-    def initSocket(self):
+    def initSocket(self,pair=True):
+        if pair:
+            self.connectCallback(CONNECT_PRESS_12)
         mac,name = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedDevices)
         if not mac:
             raise RuntimeError()
@@ -412,23 +411,24 @@ class JoyCon:
                 return handle
         return None       
 
-    def initHID(self,connectTimeout=15):
+    def initHID(self,connectTimeout=15,pair=True):
         if os.name == "nt":
             self.connectCallback(CONNECT_QUICK)
             self.handle = self.openJoyCon()
         else:
             self.handle = None
         if not self.handle:
+            mac = None
             if os.name == "nt":
-                pair_joycon(timeout=connectTimeout,connectCallback=self.connectCallback)
-                mac = None
+                if pair:
+                    pair_joycon(timeout=connectTimeout,connectCallback=self.connectCallback)
             else:
-                self.connectCallback(CONNECT_PRESS_12)
-                mac,_ = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedDevices,connectAndPair=True)
-                if not mac:
-                    print("Cannot find Wiimote")
-                    raise RuntimeError()
-                pass
+                if pair:
+                    self.connectCallback(CONNECT_PRESS_12)
+                    mac,_ = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedDevices,connectAndPair=True)
+                    if not mac:
+                        print("Cannot find Wiimote")
+                        raise RuntimeError()
             t = time.monotonic()
             while not self.handle and time.monotonic() < t + self.timeout:
                 self.handle = self.openJoyCon(mac=mac)
