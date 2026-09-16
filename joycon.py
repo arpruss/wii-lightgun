@@ -28,7 +28,7 @@ if os.name == 'nt':
     from windows.wiipair import pair_joycon
 else:
     USE_HID = ALWAYS_HIDAPI 
-    from linux.wiimote_scan import scan_wiimote_dbus_poll
+    from linux.wiimote_scan import scan_dbus_poll
 
 if USE_HID:
     import hid
@@ -326,7 +326,7 @@ class JoyCon:
     def initSocket(self,pair=True):
         if pair:
             self.connectCallback(CONNECT_PRESS_12)
-        mac,name = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedDevices)
+        mac,name = scan_dbus_poll(timeout=self.connectTimeout,blacklist=openedDevices,nameMatch=('JOY-CON',))
         if not mac:
             raise RuntimeError()
         self.s_control = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
@@ -425,7 +425,7 @@ class JoyCon:
             else:
                 if pair:
                     self.connectCallback(CONNECT_PRESS_12)
-                    mac,_ = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedDevices,connectAndPair=True)
+                    mac,_ = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedDevices,connectAndPair=True,nameMatch=('JOY-CON',))
                     if not mac:
                         print("Cannot find Wiimote")
                         raise RuntimeError()

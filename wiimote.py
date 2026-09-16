@@ -12,7 +12,7 @@ if os.name == 'nt':
     from windows.wiipair import pair_wiimote
 else:
     USE_HID = ALWAYS_HIDAPI 
-    from linux.wiimote_scan import scan_wiimote_dbus_poll
+    from linux.wiimote_scan import scan_dbus_poll
 
 if USE_HID:
     import hid
@@ -138,7 +138,7 @@ class Wiimote:
         self.led = 0xF0-0x60
         
     def initSocket(self):
-        mac,name = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
+        mac,name = scan_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes)
         if not mac:
             raise RuntimeError()
         self.s_control = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
@@ -240,7 +240,7 @@ class Wiimote:
                 mac = None
             else:
                 self.connectCallback(CONNECT_PRESS_12)
-                mac,_ = scan_wiimote_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes,connectAndPair=True)
+                mac,_ = scan_dbus_poll(timeout=self.connectTimeout,blacklist=openedWiimotes,connectAndPair=True)
                 if not mac:
                     print("Cannot find Wiimote")
                     raise RuntimeError()
