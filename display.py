@@ -4,6 +4,13 @@ import time
 import os
 import threading
 from tkinter import *
+try:
+    if os.name == "nt":
+        from PIL import ImageGrab
+    else:
+        import pyscreenshot as ImageGrab
+except:
+    pass
 
 FONT_TEMPLATE = "Helvetica %d"
 FONT_SIZE = 0.025
@@ -223,6 +230,14 @@ def update():
         
 def delete(tag):
     canvas.delete(tag)
+    
+def screenshot(name):
+    try:
+        im = ImageGrab.grab(bbox=(0,0,WINDOW_SIZE[0],WINDOW_SIZE[1]))
+        im.save(name)
+        print("screenshot "+name)
+    except:
+        pass
     
 if __name__ == '__main__':
     init()

@@ -72,6 +72,9 @@ CAMERA_HEIGHT_PIXELS = 768
 USE_P4P = False # use P4P instead of homography by default
 FLOAT = np.float64
 
+UNITS = { "mm":1., "in":1./25.4 }
+
+
 WIIMOTE_LENGTH_MM = 147 # mm
 WIIMOTE_Y_OFFSET_FROM_CAMERA = 11.7 # mm
 WIIMOTE_SIGHT_HEIGHT_DEFAULT = 4.75 # mm
@@ -916,7 +919,7 @@ def getIRQuad(ir):
     return lastQuad
     
 def screenshot():
-    pass
+    display.screenshot(SCREENSHOT_FILE+str(time.monotonic())+".png")
     
 def checkQuitAndKeys():
     display.update()
@@ -938,12 +941,12 @@ def drawArrow(xy,bottom,color=WHITE):
         signY = 1
     display.drawVerticalArrow((x,edgeY),length*signY,color=color,tag="arrow")
     
-def measure(flexible=False,screenWidth=1.):
+def measure(flexible=False):
     global running,CENTER_X,CENTER_Y
     
     size = SCREEN_SIZE
-    scale = float(screenWidth)/SCREEN_SIZE[0]
-    corner = 0
+    corner = 5
+    unit = "mm"
 
     ledPixel = [[int(size[0]*1./3),int(-0.1*size[1])],[int(size[0]*2./3),int(-0.1*size[1])],[int(size[0]*2./3),int(1.1*size[1])],[int(size[0]*1./3),int(1.1*size[1])]]
 
@@ -976,7 +979,7 @@ def measure(flexible=False,screenWidth=1.):
     display.drawCameraView()
     display.drawStatusBar()
     display.labelStatusBar(left="\u2212: Prev", right="+: Next")
-    changedWiimoteLength = False
+    changedScreenSize = False
     if CONFIG.screenHeightMM is not None:
         screenHeightMM = CONFIG.screenHeightMM
     else:
@@ -1019,14 +1022,11 @@ def measure(flexible=False,screenWidth=1.):
             elif buttons & wii and t>=nextRepeat:
                 nextRepeat = t+REPEAT_TIME
                 if t >= accelTime:
-                    move = (dir[0]*4,dir[1]*4)
+                    move = (dir[0]*5,dir[1]*5)
                 else:
                     move = dir
                 break
 
-        if corner==4:
-            yCorrection += move[1]
-            
         display.delete("arrow")
         display.delete("wiimote")
         
@@ -1070,39 +1070,49 @@ def measure(flexible=False,screenWidth=1.):
             else:
                 display.drawText(None,y=0.5+TEXT_SPACING)
             display.drawText(None,y=0.5+TEXT_SPACING*4)
-            display.drawText("LED #%d is %.4g units (%.1f px) off-screen" % (corner+1,selectedLength*scale, selectedLength),y=0.5+TEXT_SPACING*5)
+            if unit == "mm":
+                fmt = "%.1f mm"
+            elif unit == "in":
+                fmt = "%.2f in"
+            display.drawText(("LED #%d is "+fmt+" (%.1f px) off-screen") % (corner+1,selectedLength*UNITS[unit]*screenHeightMM/SCREEN_SIZE[1], selectedLength),y=0.5+TEXT_SPACING*5)
             display.lift("arrow")
 
         elif corner==4:
-            display.labelStatusBar(center="Sightline Parallax")
-            display.delete("cameraCross")
-            display.drawText("DPad: adjust Wiimote and sight sizes",y=0.5)
-            display.drawText(None,y=0.5+TEXT_SPACING)
-            screenHeightMM = SCREEN_SIZE[1] * WIIMOTE_LENGTH_MM / wiimoteLengthPixels
-            CONFIG.updateYCorrection(screenHeightMM, CONFIG.sightHeightMM)
-            screenWidthMM = screenHeightMM * CONFIG.aspect
-            sightHeightMM = CONFIG.sightHeightMM 
-            display.drawText("Screen %.1fx%.1f mm" % (screenWidthMM,screenHeightMM),y=0.5+TEXT_SPACING*4)
-            display.drawText("Sight %.1fmm" % sightHeightMM,y=0.5+TEXT_SPACING*5)
-            display.drawWiimote(wiimoteLengthPixels,sightHeightMM)
-            if move[1]:
-                wiimoteLengthPixels += move[1]
-                changedWiimoteLength = True
-            if move[0]:
-                CONFIG.sightHeightMM += move[0]*0.1
-                if CONFIG.sightHeightMM < 0.01:
-                    CONFIG.sightHeightMM = 0
-                changedWiimoteLength = True
-        else:
             display.labelStatusBar(center="Camera Centering")
             if move[0]:
                 CENTER_X = int(CENTER_X+.5) + move[0]
             if move[1]:
                 CENTER_Y = int(CENTER_Y+.5) + move[1]
             display.drawText("DPad: adjust centering",y=0.5)
-            display.drawText("[1]: 512,384; [2]: %d,%d"%(int(eeprom[0]+.5),int(eeprom[1]+.5)),y=0.5+TEXT_SPACING)
+            display.drawText("[1]: 512,384 (nominal); [2]: %d,%d (EEPROM)"%(int(eeprom[0]+.5),int(eeprom[1]+.5)),y=0.5+TEXT_SPACING)
             display.drawText("Current center: (%d,%d)" % (int(CENTER_X+.5), int(CENTER_Y+.5)),y=0.5+TEXT_SPACING*5)
             display.drawCameraCross((int(CENTER_X+.5), int(CENTER_Y+.5)), tag="cameraCross")
+        elif corner==5:
+            display.labelStatusBar(center="Physical Size")
+            display.delete("cameraCross")
+            display.drawText("DPad: adjust screen and sight sizes",y=0.5)
+            display.drawText("Match Wiimote image to real Wiimote",y=0.5+TEXT_SPACING)
+            CONFIG.updateYCorrection(screenHeightMM, CONFIG.sightHeightMM)
+            screenWidthMM = screenHeightMM * CONFIG.aspect
+            sightHeightMM = CONFIG.sightHeightMM 
+            if unit == "mm":
+                fmt = "%.0f"
+                fmt2 = "%.1f"
+            elif unit == "in":
+                fmt = "%.1f"
+                fmt2 = "%.2f"
+            display.drawText(("Screen "+fmt+"x"+fmt+" "+unit+"; Sight "+fmt2+" "+unit) % (screenWidthMM*UNITS[unit],screenHeightMM*UNITS[unit],sightHeightMM*UNITS[unit]),y=0.5+TEXT_SPACING*4)
+            display.drawText("[1]: Change units",y=0.5+TEXT_SPACING*5)
+            wiimoteLengthPixels = math.floor(WIIMOTE_LENGTH_MM / screenHeightMM * SCREEN_SIZE[1] + .5)
+            display.drawWiimote(wiimoteLengthPixels,sightHeightMM)
+            if move[1]:
+                screenHeightMM += move[1]
+                changedScreenSize = True
+            if move[0]:
+                CONFIG.sightHeightMM += move[0]*0.1
+                if CONFIG.sightHeightMM < 0.01:
+                    CONFIG.sightHeightMM = 0
+                changedScreenSize = True
 
         if pressed & wiimote.BTN_PLUS:
             corner = (corner+1) % 6
@@ -1118,19 +1128,26 @@ def measure(flexible=False,screenWidth=1.):
                     ledPixel[0][1] = size[1]-ledPixel[0][1]
                 if ledPixel[1][1] < .5*size[1]:
                     ledPixel[1][1] = size[1]-ledPixel[1][1]
-            elif corner == 5:
+            elif corner == 4:
                 CENTER_X,CENTER_Y = 512,384
+            elif corner == 5:
+                if unit == "mm":
+                    unit = "in"
+                else:
+                    unit = "mm"
         elif pressed & wiimote.BTN_2:
             if corner < 4:
                 if ledPixel[0][1] > .5*size[1]:
                     ledPixel[0][1] = size[1]-ledPixel[0][1]
                 if ledPixel[1][1] > .5*size[1]:
                     ledPixel[1][1] = size[1]-ledPixel[1][1]
-            elif corner == 5:
+            elif corner == 4:
                 CENTER_X,CENTER_Y = eeprom
         elif ( pressed & wiimote.BTN_A ):
             done = True
             break              
+        elif ( pressed * wiimote.BTN_B ):
+            screenshot()
             
         display.update()
 
@@ -1138,7 +1155,7 @@ def measure(flexible=False,screenWidth=1.):
         return False
         
     CONFIG.setLEDLocations(ledPixel,size)
-    if changedWiimoteLength:
+    if changedScreenSize:
         CONFIG.screenHeightMM = screenHeightMM
         CONFIG.sightHeightMM = sightHeightMM
     CONFIG.saveLEDs()
@@ -1530,7 +1547,6 @@ if __name__ == '__main__':
     parser.add_argument("-c", "--calibrate", action="store_true", help="Force calibration")
     parser.add_argument("-C", "--center", action="store_true", help="Perform center calibration for individual Wiimote")
     parser.add_argument("-M", "--measure", action="store_true", help="Manually measure IR LED positions.")
-    parser.add_argument("-w", "--width", type=float, default=1, help="Screen width for measurement calibration in preferred units.")
     parser.add_argument("-d", "--demo", action="store_true", help="Demo")
     parser.add_argument("--benchmark", action="store_true", help="Benchmark")
     parser.add_argument("-f", "--flexible-led-placement", action="store_true", help="Do not assume the top and bottom LED pairs are horizontal")
@@ -1619,7 +1635,7 @@ if __name__ == '__main__':
             except KeyError:
                 pass
         if not args.calibrate:
-            return measure(flexible=args.flexible_led_placement,screenWidth=args.width)
+            return measure(flexible=args.flexible_led_placement)
         else:
             return calibrate(flexible=args.flexible_led_placement)
 
