@@ -165,9 +165,10 @@ def labelStatusBar(left=None,center=None,right=None):
 def drawVerticalArrow(xy,length,color=WHITE,tag=None):
     x,y = xy
     c = rgb(color)
+    head = max(5,min(int(0.15*WINDOW_SIZE[1]),length//3))
     canvas.create_line(x,y,x,y+length,width=2,tags=tag,fill=c)
-    canvas.create_line(x,y,x-length//3,y+length//3,width=2,tags=tag,fill=c)
-    canvas.create_line(x,y,x+length//3,y+length//3,width=2,tags=tag,fill=c)
+    canvas.create_line(x,y,x-head,y+head,width=2,tags=tag,fill=c)
+    canvas.create_line(x,y,x+head,y+head,width=2,tags=tag,fill=c)
 
 def lift(tag):
     canvas.lift(tag)
