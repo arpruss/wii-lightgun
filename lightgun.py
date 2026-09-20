@@ -71,6 +71,9 @@ FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4 (nominal 1700)
 CAMERA_HEIGHT_PIXELS = 768
 USE_P4P = False # use P4P instead of homography by default
 FLOAT = np.float64
+SENSORBAR_OFFSET_MM = 21 # distance from end to LED
+SENSORBAR_LENGTH_MM = 238
+MINIMUM_OFFSET_FOR_P4P = .005
 
 UNITS = { "mm":1., "in":1./25.4 }
 
@@ -146,6 +149,7 @@ minusHorizontalMap = (
 
 class Config():
     def __init__(self):
+        global NUM_POINTS
         self.center = {}
         self.lastCameraPosition = None
         try:
@@ -177,6 +181,8 @@ class Config():
                         ledLocations[i][j]=float(line[j])/s[j]
                 if math.isnan(ledLocations[2][0]):  
                     NUM_POINTS = 2
+                else:
+                    NUM_POINTS = 4
                 self.ledLocations = ledLocations
                 try:
                     for line in f:
@@ -235,6 +241,7 @@ class Config():
                     f.write("screenHeightMM %g\n" % self.screenHeightMM)
                     f.write("sightHeightMM %g\n" % self.sightHeightMM)
                 f.write("aspect %g\n" % self.aspect)
+                f.write("offset %g\n" % self.ledOffset)
 
             
     def pointerPosition(self,irQuad): 
@@ -247,7 +254,7 @@ class Config():
         elif len(valid) != 4:
             return None
         else:
-            if self.ledOffset != 0 or USE_P4P:
+            if abs(self.ledOffset) >= MINIMUM_OFFSET_FOR_P4P or USE_P4P:
                 return pointerPosition34(irQuad)
             h = Homography(irQuad,self.ledLocations)
             if self.yCorrection != 0: # sightline parallax correction
@@ -942,10 +949,10 @@ def drawArrow(xy,bottom,color=WHITE):
     display.drawVerticalArrow((x,edgeY),length*signY,color=color,tag="arrow")
     
 def measure(flexible=False):
-    global running,CENTER_X,CENTER_Y
+    global running,CENTER_X,CENTER_Y,NUM_POINTS
     
     size = SCREEN_SIZE
-    corner = 5
+    corner = 6
     unit = "mm"
 
     ledPixel = [[int(size[0]*1./3),int(-0.1*size[1])],[int(size[0]*2./3),int(-0.1*size[1])],[int(size[0]*2./3),int(1.1*size[1])],[int(size[0]*1./3),int(1.1*size[1])]]
@@ -953,7 +960,8 @@ def measure(flexible=False):
     if CONFIG.ledLocations:
         for i in range(4):
             for j in range(2):
-                ledPixel[i][j] = int(math.floor(0.5+CONFIG.ledLocations[i][j]*size[j]))
+                if not math.isnan(CONFIG.ledLocations[i][j]):
+                    ledPixel[i][j] = int(math.floor(0.5+CONFIG.ledLocations[i][j]*size[j]))
     
     CONFIG.aspect = SCREEN_SIZE[0] / SCREEN_SIZE[1]
     
@@ -971,8 +979,8 @@ def measure(flexible=False):
     
     accelTime = 0
     nextRepeat = 0
+    ledOffsetPix = math.floor(CONFIG.ledOffset * SCREEN_SIZE[1]+.5)
     done = False
-    yCorrection = int(math.floor(CONFIG.yCorrection*size[1] + 0.5))
     
     display.setWindow()
     display.clear(DARK_GREEN)
@@ -985,6 +993,8 @@ def measure(flexible=False):
     else:
         screenHeightMM = 530
     wiimoteLengthPixels = math.floor(WIIMOTE_LENGTH_MM / screenHeightMM * SCREEN_SIZE[1] + 0.5)
+    sensorBar01 = False
+    sensorBar23 = False
 
     while running:
         time.sleep(0.005)
@@ -997,7 +1007,6 @@ def measure(flexible=False):
 
         if irQuad:
             CONFIG.setLEDLocations(ledPixel,size)
-            CONFIG.yCorrection = yCorrection / size[1]
             s = CONFIG.pointerPosition(irQuad)
             if s is not None:
                 display.drawCross(s,color=RED)
@@ -1031,6 +1040,18 @@ def measure(flexible=False):
         display.delete("wiimote")
         
         if corner<4:
+            sensorEnd = int(0.5+ SENSORBAR_OFFSET_MM * SCREEN_SIZE[1] / screenHeightMM)
+            if sensorBar01:
+                if NUM_POINTS == 4 or ledPixel[0][1] < SCREEN_SIZE[1] * .5:
+                    display.drawRect(ledPixel[0][0]-sensorEnd,SCREEN_SIZE[1]-2,ledPixel[1][0]+sensorEnd,SCREEN_SIZE[1],tag="bottomBar")
+                else:
+                    display.drawRect(ledPixel[0][0]-sensorEnd,0,ledPixel[1][0]+sensorEnd,2,tag="bottomBar")
+            else:
+                display.delete("bottomBar")
+            if sensorBar23:
+                display.drawRect(ledPixel[3][0]-sensorEnd,0,ledPixel[2][0]+sensorEnd,2,tag="topBar")
+            else:
+                display.delete("topBar")
             for i in range(NUM_POINTS):
                 xy = ledPixel[i]
                 if NUM_POINTS > 2:
@@ -1066,10 +1087,14 @@ def measure(flexible=False):
             display.delete("cameraCross")
             display.drawText("DPad: move LED location",y=0.5)
             if NUM_POINTS == 2:
-                display.drawText("1/2: LEDs on top/bottom",y=0.5+TEXT_SPACING)
+                if ledPixel[0][1] < .5*size[1]:
+                    mode = "2 LEDs under screen"
+                else:
+                    mode = "2 LEDs over screen"
             else:
-                display.drawText(None,y=0.5+TEXT_SPACING)
-            display.drawText(None,y=0.5+TEXT_SPACING*4)
+                mode = "4 LEDs"
+            display.drawText(("[1]: mode: %s" % mode),y=0.5+TEXT_SPACING*3)
+            display.drawText("[2]: toggle sensor bar mode",y=0.5+TEXT_SPACING*4)
             if unit == "mm":
                 fmt = "%.1f mm"
             elif unit == "in":
@@ -1088,8 +1113,36 @@ def measure(flexible=False):
             display.drawText("Current center: (%d,%d)" % (int(CENTER_X+.5), int(CENTER_Y+.5)),y=0.5+TEXT_SPACING*5)
             display.drawCameraCross((int(CENTER_X+.5), int(CENTER_Y+.5)), tag="cameraCross")
         elif corner==5:
-            display.labelStatusBar(center="Physical Size")
             display.delete("cameraCross")
+            display.labelStatusBar(center="LED Offset")
+            display.drawText("[Up]/[Down]: adjust LED offset from TV",y=0.5)
+            if unit == "mm":
+                fmt = "%.0f"
+            else:
+                fmt = "%.01f"
+            ledOffsetPix += move[1]
+            if ledOffsetPix < 0:
+                d = "in front of screen"
+            elif ledOffsetPix > 0:
+                d = "behind screen"
+            else:
+                d = "at screen"
+            p = abs(ledOffsetPix)
+            CONFIG.ledOffset = ledOffsetPix / SCREEN_SIZE[1]
+            o = p / SCREEN_SIZE[1] * screenHeightMM * UNITS[unit]
+            display.drawText(("Current: "+fmt+" "+unit+" (%.0f px) %s") % (o, abs(ledOffsetPix), d),y=0.5+TEXT_SPACING)
+            if p:
+                display.drawText("[1]: reset to zero",y=0.5+4*TEXT_SPACING)
+                if p/SCREEN_SIZE[1] >= MINIMUM_OFFSET_FOR_P4P and NUM_POINTS == 4:
+                    display.drawText("Performance is poorer with non-zero offset",y=0.5+5*TEXT_SPACING)
+                else:
+                    display.drawText(None,y=0.5+5*TEXT_SPACING)
+            else:
+                display.drawText(None,y=0.5+4*TEXT_SPACING)
+                display.drawText(None,y=0.5+5*TEXT_SPACING)
+
+        elif corner==6:
+            display.labelStatusBar(center="Physical Size")
             display.drawText("DPad: adjust screen and sight sizes",y=0.5)
             display.drawText("Match Wiimote image to real Wiimote",y=0.5+TEXT_SPACING)
             CONFIG.updateYCorrection(screenHeightMM, CONFIG.sightHeightMM)
@@ -1115,45 +1168,69 @@ def measure(flexible=False):
                 changedScreenSize = True
 
         if pressed & wiimote.BTN_PLUS:
-            corner = (corner+1) % 6
+            corner = (corner+1) % 7
             if NUM_POINTS == 2 and corner == 2:
                     corner = 4
         elif pressed & wiimote.BTN_MINUS:
-            corner = (corner+6-1) % 6
+            corner = (corner+7-1) % 7
             if NUM_POINTS == 2 and corner == 3:
                 corner = 1
         elif pressed & wiimote.BTN_1:
             if corner < 4:
-                if ledPixel[0][1] < .5*size[1]:
+                if NUM_POINTS == 4:
+                    NUM_POINTS = 2
+                elif ledPixel[0][1] < .5*size[1]:
                     ledPixel[0][1] = size[1]-ledPixel[0][1]
-                if ledPixel[1][1] < .5*size[1]:
                     ledPixel[1][1] = size[1]-ledPixel[1][1]
+                else:
+                    ledPixel[0][1] = size[1]-ledPixel[0][1]
+                    ledPixel[1][1] = size[1]-ledPixel[1][1]
+                    NUM_POINTS = 4
             elif corner == 4:
                 CENTER_X,CENTER_Y = 512,384
             elif corner == 5:
+                CONFIG.ledOffset = 0
+                ledOffsetPix = 0
+            elif corner == 6:
                 if unit == "mm":
                     unit = "in"
                 else:
                     unit = "mm"
         elif pressed & wiimote.BTN_2:
-            if corner < 4:
-                if ledPixel[0][1] > .5*size[1]:
-                    ledPixel[0][1] = size[1]-ledPixel[0][1]
-                if ledPixel[1][1] > .5*size[1]:
-                    ledPixel[1][1] = size[1]-ledPixel[1][1]
+            if corner < 2:
+                sensorBar01 = not sensorBar01
+            elif corner < 4:
+                sensorBar23 = not sensorBar23
             elif corner == 4:
                 CENTER_X,CENTER_Y = eeprom
         elif ( pressed & wiimote.BTN_A ):
             done = True
             break              
-        elif ( pressed * wiimote.BTN_B ):
+        elif ( pressed & wiimote.BTN_B ):
             screenshot()
+            
+        sensorBarOffset = int(0.5+(SENSORBAR_LENGTH_MM - 2*SENSORBAR_OFFSET_MM) * SCREEN_SIZE[1] / screenHeightMM)
+        if sensorBar01 and corner < 2:
+            if corner == 0:
+                ledPixel[1][0] = ledPixel[0][0] + sensorBarOffset
+                ledPixel[1][1] = ledPixel[0][1]
+            elif corner == 1:
+                ledPixel[0][0] = ledPixel[1][0] - sensorBarOffset
+                ledPixel[0][1] = ledPixel[1][1]
+        elif sensorBar23 and 2 <= corner < 4:
+            if corner == 3:
+                ledPixel[2][0] = ledPixel[3][0] + sensorBarOffset
+                ledPixel[2][1] = ledPixel[3][1]
+            elif corner == 2:
+                ledPixel[3][0] = ledPixel[2][0] - sensorBarOffset
+                ledPixel[3][1] = ledPixel[2][1]
             
         display.update()
 
     if not done:
         return False
         
+    CONFIG.ledOffset = ledOffsetPix / SCREEN_SIZE[1]
     CONFIG.setLEDLocations(ledPixel,size)
     if changedScreenSize:
         CONFIG.screenHeightMM = screenHeightMM

@@ -21,6 +21,7 @@ RED = (255,0,0)
 GRAY = (72,72,72)
 DARK_GREEN = (0,64,0)
 VERY_DARK_GREEN = (0,32,0)
+YELLOW = (255,255,0)
 WINDOW_SIZE = None
 SCREEN_SIZE = None
 running = False
@@ -170,6 +171,11 @@ def drawVerticalArrow(xy,length,color=WHITE,tag=None):
 
 def lift(tag):
     canvas.lift(tag)
+    
+def drawRect(x1,y1,x2,y2,color=YELLOW,tag=None):
+    if tag:
+        canvas.delete(tag)
+    canvas.create_rectangle(x1,y1,x2,y2,width=0,fill=rgb(color),tags=tag)
 
 def drawCross(xy,color=RED):
     thickness=3
