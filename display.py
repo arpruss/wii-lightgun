@@ -165,10 +165,26 @@ def labelStatusBar(left=None,center=None,right=None):
 def drawVerticalArrow(xy,length,color=WHITE,tag=None):
     x,y = xy
     c = rgb(color)
-    head = max(5,min(int(0.15*WINDOW_SIZE[1]),length//3))
+    small = int(0.5 + .005*WINDOW_SIZE[1])
+    if length == 0:
+        canvas.create_line(x-small,y,x+small,y,tags=tag,width=2,fill=c)
+        return
+    head = max(small,min(int(0.1*WINDOW_SIZE[1]),abs(length)/3))
+    if length<0:
+        head = -head
     canvas.create_line(x,y,x,y+length,width=2,tags=tag,fill=c)
     canvas.create_line(x,y,x-head,y+head,width=2,tags=tag,fill=c)
     canvas.create_line(x,y,x+head,y+head,width=2,tags=tag,fill=c)
+    canvas.create_line(x-small,y+length,x+small,y+length,width=2,tags=tag,fill=c)
+    
+def drawLEDOffsetArrow(length):
+    canvas.delete("ledOffset")
+    canvas.delete("ledOffsetBack")
+    if length is None:
+        return
+    canvas.create_rectangle(0,0,.22*WINDOW_SIZE[1],WINDOW_SIZE[1],tags="ledOffsetBack",fill=rgb(VERY_DARK_GREEN))
+    drawVerticalArrow((.11*WINDOW_SIZE[1],.5*WINDOW_SIZE[1]-length/2),length,color=WHITE,tag="ledOffset")
+    canvas.tag_lower("ledOffsetBack")
 
 def lift(tag):
     canvas.lift(tag)
