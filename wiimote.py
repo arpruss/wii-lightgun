@@ -520,14 +520,21 @@ class Wiimote:
                             offset += 5
                         out["ir"] = irData
                         if extType == EXT_NUNCHUK:
-                            nunchuk = {}
-                            nunchuk["buttons"] = ~data[offset+5] & 0x3                       
                             if any(x & 0xFF != 0xFF for x in data[offset:]):
+                                nunchuk = {}
+                                b = ~data[offset+5] & 0x3
+                                nunchuk["buttons"] = b
+                                out["buttons"] |= b << NUNCHUK_SHIFT
                                 x = (0xFF & data[offset+2]) << 2 | (3&(data[offset+5] >> 2))
                                 y = (0xFF & data[offset+3]) << 2 | (3&(data[offset+5] >> 4))
                                 z = (0xFF & data[offset+4]) << 2 | (3&(data[offset+5] >> 6))
                                 nunchuk["acc_raw"] = (x,y,z)
-                                nunchuk["stick"] = (data[offset]&0xFF,data[offset]&0xFF)
+                                def stickDatum(x):
+                                    z = ((x&0xFF)-128)/92.
+                                    return max(min(z,1.),-1.)
+                                joy = (stickDatum(data[offset]),stickDatum(data[offset+1]))
+                                nunchuk["stick"] = joy
+                                out["stick"] = joy
                                 out["nunchuk"] = nunchuk
 
                 self.prevButtons = out["buttons"]

@@ -61,11 +61,8 @@ REPEAT_TIME = 0.03
 ACCEL_DELAY = 2
 CENTER_X = 1024/2
 CENTER_Y = 768/2
-NUNCHUK_SHIFT = 16
-NUNCHUK_C = wiimote.NUNCHUK_BTN_C << NUNCHUK_SHIFT
-NUNCHUK_Z = wiimote.NUNCHUK_BTN_Z << NUNCHUK_SHIFT
-NUNCHUK_DEADZONE = 40
-NUNCHUK_HYSTERESIS = 10
+NUNCHUK_DEADZONE = 40/93.
+NUNCHUK_HYSTERESIS = 10/93.
 ASPECT_RATIO = 1920./1080
 FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4 (nominal 1700)
 CAMERA_HEIGHT_PIXELS = 768
@@ -103,8 +100,8 @@ verticalMap = ((wiimote.BTN_B, myinput.BTN_LEFT),
         (wiimote.BTN_A, myinput.BTN_RIGHT),
         (wiimote.BTN_1, myinput.KEY_Z),
         (wiimote.BTN_2, myinput.KEY_X),
-        (NUNCHUK_Z, myinput.KEY_S),
-        (NUNCHUK_C, myinput.KEY_A),
+        (wiimote.BTN_Z, myinput.KEY_S),
+        (wiimote.BTN_C, myinput.KEY_A),
         (wiimote.BTN_PLUS, myinput.KEY_SPACE),
         (wiimote.BTN_HOME, myinput.KEY_ENTER),
         (wiimote.BTN_DOWN, myinput.KEY_DOWN),
@@ -127,8 +124,8 @@ horizontalMap = (
         (wiimote.BTN_A, myinput.KEY_A),
         (wiimote.BTN_1, myinput.KEY_Z),
         (wiimote.BTN_2, myinput.KEY_X),
-        (NUNCHUK_Z, myinput.KEY_S),
-        (NUNCHUK_C, myinput.KEY_A),
+        (wiimote.BTN_Z, myinput.KEY_S),
+        (wiimote.BTN_C, myinput.KEY_A),
         (wiimote.BTN_HOME, myinput.KEY_ENTER),
         (wiimote.BTN_PLUS, myinput.KEY_Q),
         (wiimote.BTN_DOWN, myinput.KEY_RIGHT),
@@ -431,11 +428,7 @@ def minimize(f,a,b,n=4):
         return fb,b
 
 def getButtons(state):
-    b = state['buttons']
-    if 'nunchuk' in state:
-        return b | state['nunchuk']['buttons'] << NUNCHUK_SHIFT
-    else:
-        return b
+    return state['buttons']
 
 def wiimoteWait(timeout=None):
     if isinstance(wm, FakeWiimote):
@@ -1014,6 +1007,16 @@ def measure(flexible=False):
         display.drawText("[A]: exit and save", y=0.5+TEXT_SPACING*3)
 
         buttons = getButtons(wm.state)
+        if "stick" in wm.state:
+            stick = wm.state["stick"]
+            if stick[0] < -.5:
+                buttons |= wiimote.BTN_LEFT
+            elif stick[0] > .5:
+                buttons |= wiimote.BTN_RIGHT
+            if stick[1] < -.5:
+                buttons |= wiimote.BTN_DOWN
+            elif stick[1] > .5:
+                buttons |= wiimote.BTN_UP
         pressed = buttons &~ prevButtons
         released = ~buttons & prevButtons
         prevButtons = buttons
@@ -1309,7 +1312,7 @@ def calibrate(flexible=False):
         valid = irQuad and debounced
         display.drawCross(CALIBRATION_CORNERS[corner],color=RED if valid else LIGHTER_GRAY)
         if debounced:
-            display.drawText("Press trigger (B"+(" or C" if 'nunchuk' in wm.state else "")+") while pointing at red calibration mark" if irQuad else "Point Wiimote at calibration mark from far enough away")
+            display.drawText("Press trigger while pointing at red calibration mark" if irQuad else "Point Wiimote at calibration mark from far enough away")
         if newButtons & wiimote.BTN_MINUS and len(calibrationData[0]):
             if corner == 0:
                 corner = len(CALIBRATION_CORNERS)-1
@@ -1317,7 +1320,7 @@ def calibrate(flexible=False):
                 corner -= 1
             if len(calibrationData[corner]):
                 del calibrationData[corner][-1]
-        elif newButtons & (wiimote.BTN_B | NUNCHUK_C) and valid:
+        elif newButtons & (wiimote.BTN_B | wiimote.BTN_C) and valid:
             lastCalibrated = time.monotonic()
             z = irQuad.toUnitSquare((0.5,0.5))
             calibrationData[corner].append(z)
@@ -1380,7 +1383,7 @@ def center():
         if irQuad and abs(lastAngle - (1-index*2)*math.pi/2) < math.pi/4:
             display.drawText("Press C on Nunchuk or SPACE on keyboard", y=0.7)
             buttons = getButtons(wm.state)
-            if buttons & NUNCHUK_C or ' ' in keys:
+            if buttons & wiimote.BTN_C or ' ' in keys:
                 quads[index] = irQuad
         display.update()
 
@@ -1501,19 +1504,19 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                     if rumble and rumbleStarted and rumbleStarted + RUMBLE_TIME <= time.monotonic():
                         wm.rumble = False
                                 
-                    if 'nunchuk' in wm.state:
+                    if 'stick' in wm.state:
                         def stick(offset,prevOffset,key):
                             if offset < NUNCHUK_DEADZONE-NUNCHUK_HYSTERESIS and prevOffset >= NUNCHUK_DEADZONE-NUNCHUK_HYSTERESIS:
                                 release(device2, key)
                             elif offset >= NUNCHUK_DEADZONE:
                                 press(device2, key)
 
-                        x,y = wm.state['nunchuk']['stick']
+                        x,y = wm.state['stick']
 
-                        stick(x-128,prevNunchukX-128,myinput.KEY_RIGHT)
-                        stick(128-x,128-prevNunchukX,myinput.KEY_LEFT)
-                        stick(y-128,prevNunchukY-128,myinput.KEY_UP)
-                        stick(128-y,128-prevNunchukY,myinput.KEY_DOWN)
+                        stick(x,prevNunchukX,myinput.KEY_RIGHT)
+                        stick(-x,-prevNunchukX,myinput.KEY_LEFT)
+                        stick(y,prevNunchukY,myinput.KEY_UP)
+                        stick(-y,-prevNunchukY,myinput.KEY_DOWN)
 
                         prevNunchukX, prevNunchukY = x,y
 
