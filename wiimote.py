@@ -25,6 +25,21 @@ WIIUSE = False
 
 BALANCE_BOARD_CORNERS = ("top_right","bottom_right","top_left","bottom_left")
 
+BTN_Z = (NUNCHUK_BTN_Z << NUNCHUK_SHIFT)
+BTN_C = (NUNCHUK_BTN_C << NUNCHUK_SHIFT)
+BTN_B = 0x04
+BTN_A = 0x08
+BTN_1 = 0x02
+BTN_2 = 0x01
+BTN_PLUS = 0x1000
+BTN_MINUS = 0x0010
+BTN_HOME = 0x0080
+BTN_LEFT = 0x0100
+BTN_RIGHT = 0x0200
+BTN_DOWN = 0x0400
+BTN_UP = 0x0800
+
+
 IR_CALIBRATION_LOCATIONS = ( ((0,2,4),(1,2,6)),  # X1,Y1
                              ((3,2,0),(4,2,2)),  # X2,Y2
                              ((5,7,4),(6,7,6)),  # X3,Y3
