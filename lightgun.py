@@ -61,8 +61,6 @@ REPEAT_TIME = 0.03
 ACCEL_DELAY = 2
 CENTER_X = 1024/2
 CENTER_Y = 768/2
-NUNCHUK_DEADZONE = 40/93.
-NUNCHUK_HYSTERESIS = 10/93.
 ASPECT_RATIO = 1920./1080
 FOCAL_LENGTH_PIXELS = 1363.4 # 1363.4 (nominal 1700)
 CAMERA_HEIGHT_PIXELS = 768
@@ -107,7 +105,12 @@ verticalMap = ((wiimote.BTN_B, myinput.BTN_LEFT),
         (wiimote.BTN_DOWN, myinput.KEY_DOWN),
         (wiimote.BTN_UP, myinput.KEY_UP),
         (wiimote.BTN_LEFT, myinput.KEY_LEFT),
-        (wiimote.BTN_RIGHT, myinput.KEY_RIGHT))
+        (wiimote.BTN_RIGHT, myinput.KEY_RIGHT),
+        (wiimote.BTN_JOY_DOWN, myinput.KEY_DOWN),
+        (wiimote.BTN_JOY_UP, myinput.KEY_UP),
+        (wiimote.BTN_JOY_LEFT, myinput.KEY_LEFT),
+        (wiimote.BTN_JOY_RIGHT, myinput.KEY_RIGHT),        
+        )
 
 minusVerticalMap = ((wiimote.BTN_DOWN, myinput.KEY_F6),
         (wiimote.BTN_UP, myinput.KEY_F7),
@@ -117,7 +120,12 @@ minusVerticalMap = ((wiimote.BTN_DOWN, myinput.KEY_F6),
         (wiimote.BTN_B, myinput.KEY_TAB),
         (wiimote.BTN_HOME, myinput.KEY_F2),
         (wiimote.BTN_1, myinput.KEY_LEFTBRACE),
-        (wiimote.BTN_2, myinput.KEY_RIGHTBRACE))
+        (wiimote.BTN_2, myinput.KEY_RIGHTBRACE),
+        (wiimote.BTN_JOY_DOWN, myinput.KEY_DOWN),
+        (wiimote.BTN_JOY_UP, myinput.KEY_UP),
+        (wiimote.BTN_JOY_LEFT, myinput.KEY_LEFT),
+        (wiimote.BTN_JOY_RIGHT, myinput.KEY_RIGHT),                
+        )
        
 horizontalMap = (
         (wiimote.BTN_B, myinput.KEY_S),
@@ -131,7 +139,12 @@ horizontalMap = (
         (wiimote.BTN_DOWN, myinput.KEY_RIGHT),
         (wiimote.BTN_UP, myinput.KEY_LEFT),
         (wiimote.BTN_LEFT, myinput.KEY_DOWN),
-        (wiimote.BTN_RIGHT, myinput.KEY_UP))
+        (wiimote.BTN_RIGHT, myinput.KEY_UP),
+        (wiimote.BTN_JOY_DOWN, myinput.KEY_DOWN),
+        (wiimote.BTN_JOY_UP, myinput.KEY_UP),
+        (wiimote.BTN_JOY_LEFT, myinput.KEY_LEFT),
+        (wiimote.BTN_JOY_RIGHT, myinput.KEY_RIGHT),        
+        )
 
 minusHorizontalMap = (
         (wiimote.BTN_DOWN, myinput.KEY_F2),
@@ -142,7 +155,12 @@ minusHorizontalMap = (
         (wiimote.BTN_B, myinput.KEY_TAB),
         (wiimote.BTN_HOME, myinput.KEY_F2),
         (wiimote.BTN_1, myinput.KEY_LEFTBRACE),
-        (wiimote.BTN_2, myinput.KEY_RIGHTBRACE))
+        (wiimote.BTN_2, myinput.KEY_RIGHTBRACE),
+        (wiimote.BTN_JOY_DOWN, myinput.KEY_DOWN),
+        (wiimote.BTN_JOY_UP, myinput.KEY_UP),
+        (wiimote.BTN_JOY_LEFT, myinput.KEY_LEFT),
+        (wiimote.BTN_JOY_RIGHT, myinput.KEY_RIGHT),        
+        )
 
 class Config():
     def __init__(self):
@@ -1504,22 +1522,6 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                     if rumble and rumbleStarted and rumbleStarted + RUMBLE_TIME <= time.monotonic():
                         wm.rumble = False
                                 
-                    if 'stick' in wm.state:
-                        def stick(offset,prevOffset,key):
-                            if offset < NUNCHUK_DEADZONE-NUNCHUK_HYSTERESIS and prevOffset >= NUNCHUK_DEADZONE-NUNCHUK_HYSTERESIS:
-                                release(device2, key)
-                            elif offset >= NUNCHUK_DEADZONE:
-                                press(device2, key)
-
-                        x,y = wm.state['stick']
-
-                        stick(x,prevNunchukX,myinput.KEY_RIGHT)
-                        stick(-x,-prevNunchukX,myinput.KEY_LEFT)
-                        stick(y,prevNunchukY,myinput.KEY_UP)
-                        stick(-y,-prevNunchukY,myinput.KEY_DOWN)
-
-                        prevNunchukX, prevNunchukY = x,y
-
                     if not horizontal:
                         ir = wm.state.get("ir",[None,None,None,None])
                         irQuad = getIRQuad(ir)

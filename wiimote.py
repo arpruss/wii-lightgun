@@ -25,20 +25,8 @@ WIIUSE = False
 
 BALANCE_BOARD_CORNERS = ("top_right","bottom_right","top_left","bottom_left")
 
-BTN_Z = (NUNCHUK_BTN_Z << NUNCHUK_SHIFT)
-BTN_C = (NUNCHUK_BTN_C << NUNCHUK_SHIFT)
-BTN_B = 0x04
-BTN_A = 0x08
-BTN_1 = 0x02
-BTN_2 = 0x01
-BTN_PLUS = 0x1000
-BTN_MINUS = 0x0010
-BTN_HOME = 0x0080
-BTN_LEFT = 0x0100
-BTN_RIGHT = 0x0200
-BTN_DOWN = 0x0400
-BTN_UP = 0x0800
-
+NUNCHUK_DEADZONE = 40/93.
+NUNCHUK_HYSTERESIS = 10/93.
 
 IR_CALIBRATION_LOCATIONS = ( ((0,2,4),(1,2,6)),  # X1,Y1
                              ((3,2,0),(4,2,2)),  # X2,Y2
@@ -482,10 +470,11 @@ class Wiimote:
             if (data[0] == 0x33 and len(data) >= 18) or (data[0] == 0x37 and len(data) >= 22) or (data[0] == 0x34 and len(data) >= 22):
                 t = time.monotonic()
                 buttons = getWord(data,1)
-                out = {"buttons": buttons & 0x1F9F}
                 x = (0xFF & data[3]) << 2 | (3&(buttons >> 13))
                 y = (0xFF & data[4]) << 2 | (2&(buttons >> 4))
                 z = (0xFF & data[5]) << 2 | (2&(buttons >> 5))
+                buttons &= 0x1F9F
+                out = {}
                 
                 if data[0] == 0x34:
                     offset = 3
@@ -539,7 +528,7 @@ class Wiimote:
                                 nunchuk = {}
                                 b = ~data[offset+5] & 0x3
                                 nunchuk["buttons"] = b
-                                out["buttons"] |= b << NUNCHUK_SHIFT
+                                buttons |= b << NUNCHUK_SHIFT
                                 x = (0xFF & data[offset+2]) << 2 | (3&(data[offset+5] >> 2))
                                 y = (0xFF & data[offset+3]) << 2 | (3&(data[offset+5] >> 4))
                                 z = (0xFF & data[offset+4]) << 2 | (3&(data[offset+5] >> 6))
@@ -548,11 +537,28 @@ class Wiimote:
                                     z = ((x&0xFF)-128)/92.
                                     return max(min(z,1.),-1.)
                                 joy = (stickDatum(data[offset]),stickDatum(data[offset+1]))
+
+                                def stick(offset,key):
+                                    nonlocal buttons
+                                    
+                                    if offset < NUNCHUK_DEADZONE-NUNCHUK_HYSTERESIS:
+                                        buttons &= ~key
+                                    elif offset >= NUNCHUK_DEADZONE:
+                                        buttons |= key
+                                    else:
+                                        buttons = (buttons & ~key) | (self.prevButtons & key)
+
+                                stick(joy[0],BTN_JOY_RIGHT)
+                                stick(-joy[0],BTN_JOY_LEFT)
+                                stick(joy[1],BTN_JOY_UP)
+                                stick(-joy[1],BTN_JOY_DOWN)
+                                
                                 nunchuk["stick"] = joy
                                 out["stick"] = joy
                                 out["nunchuk"] = nunchuk
 
-                self.prevButtons = out["buttons"]
+                out["buttons"] = buttons
+                self.prevButtons = buttons
                 self.state = out
                 self.mesg_callback(out,t)        
              
@@ -597,4 +603,3 @@ if __name__=='__main__':
     print("running")
     while w.opened:
         time.sleep(1)
-        pass
