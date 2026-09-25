@@ -288,5 +288,5 @@ KEY_DICT = { "a":KEY_A, "b":KEY_B, "c":KEY_C, "d":KEY_D, "e":KEY_E,
     "down":KEY_DOWN, "left":KEY_LEFT, "right":KEY_RIGHT, "up":KEY_UP,
     "f1":KEY_F1, "f2":KEY_F2, "f3":KEY_F3, "f4":KEY_F4, "f5":KEY_F5, "f6":KEY_F6,
     "f7":KEY_F1, "f8":KEY_F2, "f9":KEY_F3, "f10":KEY_F4, "f11":KEY_F5, "f12":KEY_F6,
-    "[":KEY_LEFTBRACE, "]":KEY_RIGHTBRACE, "esc":KEY_ESC }
+    "[":KEY_LEFTBRACE, "]":KEY_RIGHTBRACE, "esc":KEY_ESC, "mouseleft":BTN_LEFT, "mouseright":BTN_RIGHT }
     

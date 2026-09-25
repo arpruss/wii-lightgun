@@ -276,7 +276,20 @@ class Config():
                 return h.apply((0,self.yCorrection/h.minimumScalingAtOrigin(self.aspect))) 
             else:
                 return h.apply((0,0))
-            
+         
+def parseMap(fname):
+    map = []
+    with open(fname, "r") as f:
+        for line in f:
+            line = line.strip()
+            if '#' in line:
+                line = line[:line.index('#')]
+            src,dest = line.split('=')
+            src = src.strip().lower()
+            dest = dest.strip().lower()
+            map.append((wiimote.BTN_DICT[src],myinput.KEY_DICT[dest]))
+    return map
+         
 class FakeWiimote():
     def __init__(self):
         self.state = { "acc_calib":(0.,0.,1.), "buttons":0, "ir":[], "fake":True }
@@ -1453,7 +1466,7 @@ def demo():
 
     display.quit()
 
-def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", horizontal=False,rumble=False):
+def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", horizontal=False,rumble=False,customMap=None):
     global running
     
     size = SCREEN_SIZE or (1920,int(0.5+1920/CONFIG.aspect))
@@ -1465,7 +1478,9 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
             wm.led = wiimote.LED1_ON | wiimote.LED4_ON
 
     rumbleStarted = None
-
+    if customMap:
+        map = customMap
+    
     with myinput.AbsMouseInput(size, name=mouseName) as device:
         with myinput.KeyInput(name=controllerName) as device2:
             try:
@@ -1495,8 +1510,8 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                     pressed = buttons &~ prevButtons
                     released = ~buttons & prevButtons
                     prevButtons = buttons
-                    
-                    if buttons & wiimote.BTN_MINUS:
+
+                    if not customMap and (buttons & wiimote.BTN_MINUS):
                         if pressed & wiimote.BTN_PLUS:
                             horizontal = not horizontal
                             updateLEDs()
@@ -1507,7 +1522,8 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
                             elif released & wii:
                                 release(device2, u)
                     elif pressed or released:
-                        map = verticalMap if not horizontal else horizontalMap
+                        if not customMap:
+                            map = verticalMap if not horizontal else horizontalMap
 
                         for wii,u in map:
                             dev = device if (u == myinput.BTN_LEFT or u == myinput.BTN_RIGHT) else device2
@@ -1521,7 +1537,7 @@ def emulateMouse(mouseName="LightgunMouse",controllerName="WiimoteButtons", hori
 
                     if rumble and rumbleStarted and rumbleStarted + RUMBLE_TIME <= time.monotonic():
                         wm.rumble = False
-                                
+
                     if not horizontal:
                         ir = wm.state.get("ir",[None,None,None,None])
                         irQuad = getIRQuad(ir)
@@ -1635,9 +1651,10 @@ if __name__ == '__main__':
     parser.add_argument("--benchmark", action="store_true", help="Benchmark")
     parser.add_argument("-f", "--flexible-led-placement", action="store_true", help="Do not assume the top and bottom LED pairs are horizontal")
     parser.add_argument("-o", "--horizontal", action="store_true", help="Horizontal mode (without lightgun)")
-    parser.add_argument("-t", "--terminal", action="store_true", help="Use terminal rather than tkinter (doesn't work for calibration)")
-    parser.add_argument("-m", "--mouse-name", help="Set name of mouse device", default="LightgunMouse")
-    parser.add_argument("-b", "--buttons-name", help="Set name of buttons device", default="WiimoteButtons")
+    parser.add_argument("-t", "--terminal", action="store_true", help="Use terminal rather than tkinter (doesn't work for calibration)")    
+    parser.add_argument("-m", "--mouse-name", help="Set name of mouse device" if os.name != 'nt' else argparse.SUPPRESS, default="LightgunMouse")
+    parser.add_argument("-b", "--buttons-name", help="Set name of buttons device" if os.name != 'nt' else argparse.SUPPRESS, default="WiimoteButtons")
+    parser.add_argument("-u", "--custom-map", help="Filename of custom button map")
     parser.add_argument("-l", "--led-file", help="Configuration file for LEDs", default=LED_FILE)
     parser.add_argument("-B", "--background-connect", type=float, default=0, help="Connect in background for this many seconds")
     parser.add_argument("-r", "--rumble", action="store_true", help="Rumble on fire")
@@ -1679,6 +1696,11 @@ if __name__ == '__main__':
         ledLocations = None
     else:
         ledLocations = CONFIG.ledLocations
+        
+    if args.custom_map:
+        customMap = parseMap(args.custom_map)
+    else:
+        customMap = None
 
     if not args.terminal and (not args.background_connect or not ledLocations or args.center):
         display.init(name="LightGun")
@@ -1745,4 +1767,5 @@ if __name__ == '__main__':
                 thread = threading.Thread(target=run, args=(args.command,))
                 thread.daemon = True
                 thread.start()
-            emulateMouse(mouseName=args.mouse_name,controllerName=args.buttons_name,horizontal=args.horizontal,rumble=args.rumble)
+            emulateMouse(mouseName=args.mouse_name,controllerName=args.buttons_name,
+                horizontal=args.horizontal,rumble=args.rumble,customMap=customMap)
