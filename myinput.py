@@ -56,6 +56,8 @@ except ModuleNotFoundError:
     # Constants for SendInput
     INPUT_MOUSE = 0
     INPUT_KEYBOARD = 1
+    KEYEVENTF_SCANCODE = 0x0008
+    KEYEVENTF_EXTENDEDKEY = 0x0001
     MOUSEEVENTF_MOVE = 0x0001
     MOUSEEVENTF_ABSOLUTE = 0x8000
     MOUSEEVENTF_LEFTDOWN = 0x0002
@@ -156,9 +158,22 @@ except ModuleNotFoundError:
         x = INPUT(type=INPUT_MOUSE, mi=mi)
         ctypes.windll.user32.SendInput(1, ctypes.byref(x), ctypes.sizeof(x))
         
-    def send_key(code,down):
+    def send_key(vk, down):
+        scan = ctypes.windll.user32.MapVirtualKeyA(vk, 0)
         extra = ctypes.c_ulong(0)
-        ki = KeyBdInput(code, 0, 0 if down else KEYEVENTF_KEYUP, 0, ctypes.pointer(extra))
+        flags = KEYEVENTF_SCANCODE
+        if scan & 0xFF00:
+            flags |= KEYEVENTF_EXTENDEDKEY
+            scan &= 0xFF
+        if not down:
+            flags |= KEYEVENTF_KEYUP
+        ki = KeyBdInput(0, scan, flags, 0, ctypes.pointer(extra))
+        x = INPUT(type=INPUT_KEYBOARD, ki=ki)
+        ctypes.windll.user32.SendInput(1, ctypes.byref(x), ctypes.sizeof(x))        
+  
+    def send_key_vk(vk,down):
+        extra = ctypes.c_ulong(0)
+        ki = KeyBdInput(vk, 0, 0 if down else KEYEVENTF_KEYUP, 0, ctypes.pointer(extra))
         x = INPUT(type=INPUT_KEYBOARD, ki=ki)
         ctypes.windll.user32.SendInput(1, ctypes.byref(x), ctypes.sizeof(x))        
   
@@ -290,3 +305,8 @@ KEY_DICT = { "a":KEY_A, "b":KEY_B, "c":KEY_C, "d":KEY_D, "e":KEY_E,
     "f7":KEY_F1, "f8":KEY_F2, "f9":KEY_F3, "f10":KEY_F4, "f11":KEY_F5, "f12":KEY_F6,
     "[":KEY_LEFTBRACE, "]":KEY_RIGHTBRACE, "esc":KEY_ESC, "mouseleft":BTN_LEFT, "mouseright":BTN_RIGHT }
     
+if __name__ == '__main__':
+   with KeyInput() as k:
+       for i in range(10):
+           k.press(KEY_UP)
+           k.release(KEY_UP)
