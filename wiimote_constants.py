@@ -47,4 +47,5 @@ EXT_BALANCE_BOARD = 2
 
 BTN_DICT = { "z":BTN_Z, "c":BTN_C, "b":BTN_B, "a":BTN_A, "1":BTN_1, "2":BTN_2,
         "plus":BTN_PLUS, "minus":BTN_MINUS, "home":BTN_HOME, "left":BTN_LEFT,
-        "right":BTN_RIGHT, "up":BTN_UP, "down":BTN_DOWN }
+        "right":BTN_RIGHT, "up":BTN_UP, "down":BTN_DOWN, "jleft":BTN_JOY_LEFT, 
+        "jright":BTN_JOY_RIGHT, "jup":BTN_JOY_UP, "jdown":BTN_JOY_DOWN }
