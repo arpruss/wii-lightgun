@@ -186,6 +186,7 @@ class Config():
         self.screenHeightMM = None
         self.sightHeightMM = WIIMOTE_SIGHT_HEIGHT_DEFAULT
         self.ledOffset = 0
+
         try:
             with open(LED_FILE) as f:
                 s = tuple(map(float,f.readline().strip().split(",")))
@@ -259,7 +260,7 @@ class Config():
                 f.write("offset %g\n" % self.ledOffset)
 
             
-    def pointerPosition(self,irQuad): 
+    def rawPointerPosition(self,irQuad): 
         valid = []
         for i in range(4):
             if irQuad[i] is not None:
@@ -276,6 +277,14 @@ class Config():
                 return h.apply((0,self.yCorrection/h.minimumScalingAtOrigin(self.aspect))) 
             else:
                 return h.apply((0,0))
+                
+    def pointerPosition(self,irQuad):
+        newPosition = self.rawPointerPosition(irQuad)
+        if self.smoothing != 0. and self.prevPosition is not None:
+            newPosition = ( self.prevPosition[0] * self.smoothing + newPosition[0] * (1-self.smoothing),
+                self.prevPosition[1] * self.smoothing + newPosition[1] * (1-self.smoothing) )
+        self.prevPosition = newPosition
+        return newPosition
          
 def parseMap(fname):
     map = []
@@ -1562,7 +1571,7 @@ def updateConnectMessages():
     global newConnectMessage
     if TK and newConnectMessage:
         display.drawText(connectMessageText)
-        display.drawText("Make sure Wii is turned off", y=0.7)
+        #display.drawText("Make sure Wii is turned off", y=0.7)
         display.drawText("Press ESC to exit", y=0.8)
         display.update()
         newConnectMessage = False
@@ -1659,6 +1668,7 @@ if __name__ == '__main__':
     parser.add_argument("-B", "--background-connect", type=float, default=0, help="Connect in background for this many seconds")
     parser.add_argument("-r", "--rumble", action="store_true", help="Rumble on fire")
     parser.add_argument("-s", "--sensitivity", type=int, default=-1, help="IR sensitivity (1-5)")
+    parser.add_argument("-S", "--smoothing", type=float, default=0.0, help="smoothing (0.0-1.0)")
     parser.add_argument("--p3p", action="store_true", help="Allow P3P as fallback")
     parser.add_argument("--p2pa", action="store_true", help="Allow P2PA as fallback")
     parser.add_argument("--use-calibration", action="store_true", help="Use Wiimote EEPROM calibration data")
@@ -1696,6 +1706,8 @@ if __name__ == '__main__':
         ledLocations = None
     else:
         ledLocations = CONFIG.ledLocations
+        
+    CONFIG.smoothing = args.smoothing
         
     if args.custom_map:
         customMap = parseMap(args.custom_map)
